@@ -23,6 +23,7 @@ ns.RegisterModule({
   OnRunStart = function(_, run)
     run.bosses, run.wipes = {}, 0
   end,
+  OnRunResume = function(_, run) run.bosses, run.wipes = run.bosses or {}, run.wipes or 0 end,
   events = {
     ENCOUNTER_START = function(_, run, encounterID)
       if not run or ns.IsSecret(encounterID) then return end

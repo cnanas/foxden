@@ -107,6 +107,10 @@ function ns.RefreshMapPins()
   if not child or not WorldMapFrame:IsShown() then return end
   if ns.Quests then ns.Quests.Try("guild pins", refreshGuildPins) else pcall(refreshGuildPins) end
   if ns.DrawQuestPins then ns.DrawQuestPins(child, WorldMapFrame.GetMapID and WorldMapFrame:GetMapID()) end
+  if ns.DrawEntrancePins then
+    if ns.Quests then ns.Quests.Try("dungeon entrances", ns.DrawEntrancePins, child, WorldMapFrame.GetMapID and WorldMapFrame:GetMapID())
+    else pcall(ns.DrawEntrancePins, child, WorldMapFrame.GetMapID and WorldMapFrame:GetMapID()) end
+  end
 end
 
 -- Hook the world map. It may load after you log in (load-on-demand), so also wait for it.

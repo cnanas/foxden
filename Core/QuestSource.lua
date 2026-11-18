@@ -152,22 +152,45 @@ function ns.EnableQuestieDB()
   ReloadUI()
 end
 
--- Where a dungeon's entrance is (QuestieDB's dungeon list): map ID, x, y (0-100), or nil.
-function ns.DungeonEntrance(name)
+-- Dungeon entrances from QuestieDB's dungeon list: { { name, slug, map, x, y (0-100) }, ... },
+-- one per entrance (a dungeon can have more than one). Built once QuestieDB has them.
+-- QuestieDB names a few dungeons differently from Foxden's list.
+local ENTRANCE_ALIAS = {
+  ["stockade"] = "stormwind-stockade", ["stockades"] = "stormwind-stockade",
+  ["temple-of-atalhakkar"] = "sunken-temple", ["sunken-temple-of-atalhakkar"] = "sunken-temple",
+  ["lower-blackrock-spire"] = "blackrock-spire", ["upper-blackrock-spire"] = "blackrock-spire",
+  ["dire-maul-east"] = "dire-maul", ["dire-maul-west"] = "dire-maul", ["dire-maul-north"] = "dire-maul",
+}
+local entrances
+function ns.DungeonEntrances()
+  if entrances then return entrances end
   local L = _G.LibQuestieDB
-  if not (L and L.Support and L.Support.Get) then return nil end
+  if not (L and L.Support and L.Support.Get) then return {} end
   local ok, zdb = pcall(L.Support.Get, "ZoneDB")
   local list = ok and type(zdb) == "table" and type(zdb.private) == "table" and zdb.private.dungeons
-  if type(list) ~= "table" then return nil end
-  local want = ns.Slug(name)
-  local maps = zoneMaps(L)
+  if type(list) ~= "table" then return {} end
+  local maps, out = zoneMaps(L), {}
   for _, d in pairs(list) do
-    if type(d) == "table" and type(d[1]) == "string" and ns.Slug(d[1]) == want and type(d[4]) == "table" then
+    if type(d) == "table" and type(d[1]) == "string" and type(d[4]) == "table" then
+      local slug = ns.Slug(d[1])
+      slug = ENTRANCE_ALIAS[slug] or slug
       for _, loc in ipairs(d[4]) do
         local map = type(loc) == "table" and maps[loc[1]]
-        if map and map > 0 then return map, loc[2], loc[3] end
+        if map and map > 0 and type(loc[2]) == "number" and type(loc[3]) == "number" then
+          out[#out + 1] = { name = d[1], slug = slug, map = map, x = loc[2], y = loc[3] }
+        end
       end
     end
+  end
+  entrances = out -- the list is static once QuestieDB has it, so build it once
+  return out
+end
+
+-- Where a dungeon's entrance is: map ID, x, y (0-100), or nil.
+function ns.DungeonEntrance(name)
+  local want = ns.Slug(name)
+  for _, e in ipairs(ns.DungeonEntrances()) do
+    if e.slug == want then return e.map, e.x, e.y end
   end
 end
 

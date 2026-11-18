@@ -1,5 +1,12 @@
 # Foxden
 
+## 2.3.2
+
+- **The game's quest tracker (and EllesmereUI's) stays hidden** when **Hide the game's quest tracker** is on. It kept coming back: Edit Mode puts the game's tracker back on screen, and EllesmereUI redraws its own. Foxden now uses EllesmereUI's own switch for hiding its tracker, and hides the game's again whenever something shows it.
+- **The run tracker shows up by itself** when a run starts or picks back up. It could stay hidden after a loading screen until you gained XP or gold.
+- **Back in after leaving mid-run:** go back into a dungeon within an hour of leaving it before the last boss and Foxden picks your run up where it stopped, instead of starting a new one at 0/6. Pieces of one run that an older Foxden closed at each death are joined back into one, and the website drops the extra copies. A run that had already started again (no boss down yet) is folded in. Right-click the run tracker to end it if you're really starting over.
+- **Dungeon entrances on the world map:** a skull at every dungeon and raid entrance, ringed in its level colour (bigger for raids), on the zone map and the continent. Hover for its levels, wings and boss count; click to open it in Foxden, shift-click for the arrow. Turn it off on the Quests page (**Dungeon entrances**). Needs the QuestieDB addon, like the Entrance button.
+
 ## 2.3.1
 
 - **Dying no longer ends the run.** Releasing (or hearthing, or stepping out to a vendor) before the last boss keeps the run going; go back in and it carries on. A run ends at the last boss, when you enter a different dungeon, or when you end it yourself: right-click the run tracker, the **End run** button on the run's page, or `/fox end`.

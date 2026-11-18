@@ -363,10 +363,26 @@ local function refresh()
 end
 ns.RefreshTracker = refresh
 
+-- Draw it, keeping any error (WoW hides them) where /fox quests shows the last one.
+local fails = 0
+local function safeRefresh()
+  local ok
+  if ns.Quests and ns.Quests.Try then ok = ns.Quests.Try("run tracker", refresh) else ok = pcall(refresh) end
+  fails = ok and 0 or fails + 1
+end
+
+-- It shows itself on its own: once a second, if there's a run it should be showing
+-- and it isn't (it came up during a loading screen, or a first draw failed), draw it.
+C_Timer.NewTicker(1, function()
+  local run = ns.GetCurrentRun and ns.GetCurrentRun()
+  if not run or run._notDungeon or not ns.settings or ns.settings.tracker == false or hiddenFor == run.id then return end
+  if fails < 5 and (not frame or not frame:IsShown()) then safeRefresh() end
+end)
+
 ns.RegisterModule({
   name = "Tracker",
   OnRunStart = function(_, run)
-    startCounting(run); hiddenFor = nil; C_Timer.After(0.2, refresh)
+    startCounting(run); hiddenFor, fails = nil, 0; C_Timer.After(0.2, safeRefresh)
     if run._notDungeon then return end
     -- a quick briefing: quests you could still pick up, and your wishlist here
     C_Timer.After(2, function()
@@ -382,8 +398,9 @@ ns.RegisterModule({
       if n > 0 then ns.say("On your wishlist here: " .. table.concat(names, ", ") .. ".") end
     end)
   end,
+  OnRunResume = function(_, run) startCounting(run); hiddenFor, fails = nil, 0; C_Timer.After(0.2, safeRefresh) end,
   OnRunFinish = function(_, run) onXP(run); onMoney(run); if frame then frame:Hide() end end,
-  OnLoad = function() C_Timer.After(2, function() local r = ns.GetCurrentRun(); if r and not r._xp then startCounting(r) end refresh() end) end,
+  OnLoad = function() C_Timer.After(2, function() local r = ns.GetCurrentRun(); if r and not r._xp then startCounting(r) end safeRefresh() end) end,
   events = {
     PLAYER_XP_UPDATE = function(_, run) if run then onXP(run); refresh() end end,
     PLAYER_LEVEL_UP = function(_, run) if run then C_Timer.After(0.5, function() onXP(run); refresh() end) end end,
@@ -394,6 +411,6 @@ ns.RegisterModule({
         ns.say("Wishlist: " .. (w.n or "?") .. " (" .. (ns.WISH_LABEL[w.k or "ms"] or ""):lower() .. ") can drop from " .. name .. ".")
       end
     end,
-    ENCOUNTER_END = function(_, run) if run then C_Timer.After(0.1, refresh) end end,
+    ENCOUNTER_END = function(_, run) if run then C_Timer.After(0.1, safeRefresh) end end,
   },
 })

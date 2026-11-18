@@ -109,6 +109,19 @@ ns.RegisterModule({
     end
     run._meter = { known = known, counted = {} }
   end,
+  OnRunResume = function(_, run)
+    run.stats, run.segments = run.stats or {}, run.segments or {}
+    run.combatSeconds, run.fights = run.combatSeconds or 0, run.fights or 0
+    if run._meter then return end
+    -- fights already in the meter were counted before (or happened while you were away)
+    local known = {}
+    if ready() then
+      for _, s in ipairs(C_DamageMeter.GetAvailableCombatSessions() or {}) do
+        if s.sessionID and not isSecret(s.sessionID) then known[s.sessionID] = true end
+      end
+    end
+    run._meter = { known = known, counted = {} }
+  end,
   OnCombatEnd = function(_, run) capture(run) end,
   OnRunFinish = function(_, run) capture(run) end,
   Migrate = function(_, run, from)

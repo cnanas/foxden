@@ -12,7 +12,7 @@ ns.SCHEMA = 3
 
 ns.DEFAULTS = { track = true, chat = true, remind = true, sendNow = true, keep = 100, scale = 1, share = true, offer = false, shareLocation = true, welcomed = false, copyPopup = true, runSummary = true, levelCard = true, shareLevelUps = true, guildDings = true, learnAll = true, levelScreenshot = false, tracker = true, minimapButton = true, rareAlerts = true, questPins = true, questPinsAll = true, questMinimap = true, questTracker = true, hideGameTracker = true,
   questAhead = 3, questShowGrey = false, questMarkSize = 18, questTrackerFont = 12, questTrackerWidth = 270, questTrackerBg = 0.45,
-  questTrackerLocked = false, questShowDoneObj = true, questTrackerItems = true, itemSource = true }
+  questTrackerLocked = false, questShowDoneObj = true, questTrackerItems = true, itemSource = true, entrancePins = true }
 ns.settings = setmetatable({}, { __index = ns.DEFAULTS }) -- replaced at load
 
 local db, run
@@ -85,6 +85,8 @@ function ns.Changed() if ns.RefreshUI then ns.RefreshUI() end end
 --   events = { EVENT_NAME = function(self, run, ...) end }  (run may be nil)
 --   OnLoad(self, db)          saved data is ready
 --   OnRunStart(self, run)     a run just started; add your fields to it
+--   OnRunResume(self, run)    a saved run was picked up again (back in after leaving it);
+--                             keep its fields, rebuild anything kept in "_" scratch fields
 --   OnCombatEnd(self, run)    a fight ended and the meter has settled
 --   OnRunFinish(self, run)    last chance to record before the run is saved
 --   OnRunDone(self, run)      the last boss is down (the run is saved when you leave)
@@ -304,10 +306,88 @@ local function finishRun(reason)
 end
 ns.FinishRun = finishRun
 
+-- Back in a dungeon you left mid-run a little while ago (an older Foxden closed runs at the
+-- door when you released after dying; a dungeon Foxden can't judge still closes there):
+-- the run you left picks up where it stopped instead of a new one starting. A run that
+-- started in the meantime with no boss down is folded into it.
+local REOPEN_WINDOW = 60 * 60
+local function closedHere(r, instanceID)
+  return r and r.instanceID == instanceID and r.endReason == "left dungeon" and not r.doneAt
+    and (not r.loggedBy or r.loggedBy == UnitName("player")) and r.endTime
+end
+
+local function addInto(t, from, keys)
+  for _, k in ipairs(keys) do if type(from[k]) == "number" then t[k] = (t[k] or 0) + from[k] end end
+end
+
+-- Fold a later piece of the same run into the earlier one: fights, damage, bosses, XP, gold.
+local function merge(into, from)
+  addInto(into, from, { "combatSeconds", "fights", "wipes", "xp", "gold" })
+  into.stats = into.stats or {}
+  for who, st in pairs(from.stats or {}) do
+    local t = into.stats[who] or {}
+    into.stats[who] = t
+    for k, v in pairs(st) do if type(v) == "number" then t[k] = (t[k] or 0) + v end end
+  end
+  local shift = (from.startTime or into.startTime) - into.startTime
+  into.segments = into.segments or {}
+  for _, seg in ipairs(from.segments or {}) do
+    seg.at = (seg.at or 0) + shift
+    into.segments[#into.segments + 1] = seg
+  end
+  into.bosses = into.bosses or {}
+  for _, b in ipairs(from.bosses or {}) do
+    b.killedAt = (b.killedAt or 0) + shift
+    into.bosses[#into.bosses + 1] = b
+  end
+  if from.pulled then into.pulled = true end
+  if from.doneAt then into.doneAt = from.doneAt end
+end
+
+local function tryReopen(instanceID)
+  local i = #db.runs
+  local r = db.runs[i]
+  if not closedHere(r, instanceID) or GetServerTime() - r.endTime > REOPEN_WINDOW then return false end
+  local interim = run
+  if interim and (interim.instanceID ~= instanceID or #(interim.bosses or {}) > 0) then return false end
+  table.remove(db.runs, i)
+  -- earlier pieces of the same run (an older Foxden closed it at every release) join up too;
+  -- their ids go along so the website drops the copies it got
+  local first = db.runs[#db.runs]
+  while closedHere(first, instanceID) and r.startTime - first.endTime <= REOPEN_WINDOW do
+    table.remove(db.runs, #db.runs)
+    first.mergedIds = first.mergedIds or {}
+    first.mergedIds[#first.mergedIds + 1] = r.id
+    for _, id in ipairs(r.mergedIds or {}) do first.mergedIds[#first.mergedIds + 1] = id end
+    first.reopened = math.max(first.reopened or 0, r.reopened or 0)
+    merge(first, r)
+    r = first
+    first = db.runs[#db.runs]
+  end
+  r.endTime, r.duration, r.endReason, r.outside = nil, nil, nil, nil
+  r.reopened = (r.reopened or 0) + 1 -- the companion sends it again; the website updates the first upload
+  if interim then
+    merge(r, interim)
+    -- the damage meter's fights the interim run already counted stay counted
+    r._meter, r._encounterLog = interim._meter, interim._encounterLog
+  end
+  run = r
+  db.current = r
+  fire("OnRunResume", r)
+  say(string.format("Picked up your %s run where it stopped (%d %s down). Starting over? Right-click the run tracker to end it and a new one starts.",
+    ns.RunName and ns.RunName(r) or r.dungeon, #(r.bosses or {}), #(r.bosses or {}) == 1 and "boss" or "bosses"))
+  ns.Changed()
+  return true
+end
+
 local function checkZone()
   local name, instanceType, _, difficultyName, _, _, _, instanceID = GetInstanceInfo()
   if instanceType == "party" then
     if run and run.instanceID ~= instanceID then finishRun("changed dungeon") end
+    if not run or (not run._reopenChecked and #(run.bosses or {}) == 0) then
+      if run then run._reopenChecked = true end
+      tryReopen(instanceID)
+    end
     if run and run.outside then run.outside = nil; say("Back in " .. (ns.RunName and ns.RunName(run) or run.dungeon) .. ". The run carries on.") end
     if not run and ns.settings.track then startRun(name, difficultyName, instanceID)
     elseif run then
@@ -335,7 +415,12 @@ end
 StaticPopupDialogs["FOXDEN_END_RUN"] = {
   text = "End this run now?\n\nIt's saved as it is, with the bosses killed so far.",
   button1 = "End run", button2 = CANCEL or "Cancel",
-  OnAccept = function() finishRun("ended manually") end,
+  OnAccept = function()
+    local was = run
+    finishRun("ended manually")
+    -- ended a picked-up run while still inside: start a fresh one right away
+    if was and was.reopened and not run then C_Timer.After(0.5, checkZone) end
+  end,
   timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
 }
 function ns.AskEndRun()

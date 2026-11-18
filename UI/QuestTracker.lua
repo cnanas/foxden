@@ -462,26 +462,43 @@ function ns.RefreshQuestTracker()
   placeItems()
 end
 
--- Hide the game's own quest tracker (on by default; Quests page). Also EllesmereUI's tracker,
--- which either skins the game's or draws its own. Hidden by moving them into a hidden frame, so
--- nothing keeps showing them again; turned back on, they return to where they were.
-local vault, moved = nil, {}
-local GAME_TRACKERS = { "ObjectiveTrackerFrame", "QuestWatchFrame", "EUI_CustomQuestTracker", "EllesmereUIQTBackground" }
+-- Hide the game's own quest tracker (on by default; Quests page), and EllesmereUI's.
+--  * EllesmereUI: its own switch for other addons (_EQT_SetSuppressed), which hides its
+--    tracker and the game's one it skins, and keeps them hidden.
+--  * The game's ObjectiveTrackerFrame belongs to Edit Mode, which puts it back on screen
+--    (moving it into a hidden frame didn't stick). Instead, whenever anything shows it,
+--    Foxden hides it again; in combat, where hiding it is blocked, it goes see-through
+--    and is hidden properly when combat ends.
+--  * The older QuestWatchFrame is moved into a hidden frame.
+local vault, moved, hooked = nil, {}, false
+local function hideOTF(otf)
+  if InCombatLockdown() then otf:SetAlpha(0) else otf:SetAlpha(1); otf:Hide() end
+end
+local function wantHidden() return settings().hideGameTracker and true or false end
+
 function ns.ApplyGameTracker()
-  if settings().hideGameTracker then
-    vault = vault or CreateFrame("Frame"); vault:Hide()
-    for _, name in ipairs(GAME_TRACKERS) do
-      local f = _G[name]
-      if f and f.GetParent and f:GetParent() ~= vault then
-        moved[name] = moved[name] or f:GetParent()
-        pcall(f.SetParent, f, vault)
-      end
+  local hide = wantHidden()
+  local eui = type(_G._EQT_SetSuppressed) == "function"
+  if eui then pcall(_G._EQT_SetSuppressed, "Foxden", hide) end
+
+  local otf = _G.ObjectiveTrackerFrame
+  if otf and not eui then
+    if hide and not hooked then
+      hooked = true
+      hooksecurefunc(otf, "Show", function(self) if wantHidden() then hideOTF(self) end end)
+      otf:HookScript("OnShow", function(self) if wantHidden() then hideOTF(self) end end)
     end
-  else
-    for name, parent in pairs(moved) do
-      local f = _G[name]
-      if f then pcall(f.SetParent, f, parent) end
-      moved[name] = nil
+    if hide then if otf:IsShown() then hideOTF(otf) end
+    elseif not InCombatLockdown() then otf:SetAlpha(1); if not otf:IsShown() then otf:Show() end end
+  end
+
+  local qwf = _G.QuestWatchFrame
+  if qwf and qwf.GetParent then
+    if hide then
+      vault = vault or CreateFrame("Frame"); vault:Hide()
+      if qwf:GetParent() ~= vault then moved.QuestWatchFrame = moved.QuestWatchFrame or qwf:GetParent(); pcall(qwf.SetParent, qwf, vault) end
+    elseif moved.QuestWatchFrame then
+      pcall(qwf.SetParent, qwf, moved.QuestWatchFrame); moved.QuestWatchFrame = nil
     end
   end
 end
@@ -498,7 +515,12 @@ ns.RegisterModule({
       C_Timer.After(2, ns.ApplyGameTracker); C_Timer.After(6, ns.ApplyGameTracker)
     end,
     ZONE_CHANGED_NEW_AREA = function() ns.RefreshQuestTracker() end,
-    PLAYER_REGEN_ENABLED = function() if itemPending then placeItems() end end,
+    PLAYER_REGEN_ENABLED = function()
+      if itemPending then placeItems() end
+      -- hidden for real now that combat is over (it was only see-through)
+      local otf = _G.ObjectiveTrackerFrame
+      if otf and wantHidden() and type(_G._EQT_SetSuppressed) ~= "function" and otf:IsShown() then hideOTF(otf) end
+    end,
     BAG_UPDATE_COOLDOWN = function() if not (InCombatLockdown and InCombatLockdown()) then placeItems() end end,
   },
 })

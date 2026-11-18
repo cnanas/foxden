@@ -96,6 +96,7 @@ end
 ns.RegisterModule({
   name = "Route",
   OnRunStart = function(_, run) start(run) end,
+  OnRunResume = function(_, run) start(run) end,
   OnLoad = function()
     -- resumed after a /reload mid-dungeon
     C_Timer.After(2, function() local run = ns.GetCurrentRun(); if run then start(run) end end)

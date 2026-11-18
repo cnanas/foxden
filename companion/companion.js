@@ -147,6 +147,14 @@ async function uploadToSite(run) {
   }
 }
 
+// Update a run the website already has. Without a website there's nothing to update.
+async function resend(run) {
+  const site = await uploadToSite(run);
+  if (site === null) return false;
+  console.log('  (updated the run on the website)');
+  return true;
+}
+
 async function send(run, attempt = 0, site) {
   if (site === undefined) { site = await uploadToSite(run); if (site === null) return false; }
   // the website already posted it to Discord, or a groupmate uploaded the same run first
@@ -490,10 +498,14 @@ async function check() {
     catch (err) { console.error('Could not read saved data yet:', err.message); return; }
     const runs = (db && db.runs) || [];
     for (const run of runs) {
-      if (!run || !run.id || posted.has(run.id)) continue;
-      const ok = await send(run);
+      if (!run || !run.id) continue;
+      // a run Foxden picked up again after you left it mid-way is sent once more: the website
+      // updates the first upload in place, and nothing new goes to Discord
+      const key = run.reopened ? `${run.id}#${run.reopened}` : run.id;
+      if (posted.has(key)) continue;
+      const ok = run.reopened && posted.has(run.id) ? await resend(run) : await send(run);
       if (ok) {
-        if (!DRY) { posted.add(run.id); savePosted(); }
+        if (!DRY) { posted.add(key); savePosted(); }
         console.log(`Posted run: ${run.dungeon} (${run.id})`);
         if (!DRY) await sleep(1000); // stay under Discord's webhook rate limit on a backlog
       } else break; // keep order; try the rest next time

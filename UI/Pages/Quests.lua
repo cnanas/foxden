@@ -64,6 +64,9 @@ function page:Build(f)
   add(UI.Toggle(b, ROW_W, "Dungeon quests and their chains",
     "Ringed, with the earlier steps of their chains. Click to open.",
     get("questPins"), set("questPins")))
+  add(UI.Toggle(b, ROW_W, "Dungeon entrances",
+    "A mark at every dungeon and raid entrance, coloured by its level. Click to open the dungeon.",
+    get("entrancePins"), set("entrancePins")))
   add(UI.Toggle(b, ROW_W, "Marks on the minimap", "The same marks for the ones close by.",
     get("questMinimap"), set("questMinimap")))
   add(UI.Stepper(b, ROW_W, "Mark size", "How big the ! and ? are on the world map.",
