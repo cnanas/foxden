@@ -95,6 +95,20 @@ function UI.Border(frame, color)
   return edges
 end
 
+-- Make a texture round. Newer clients use a mask texture (the old SetMask(file) quietly does
+-- nothing there, leaving it square); older ones SetMask.
+local ROUND = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
+function UI.Round(owner, tex)
+  if owner.CreateMaskTexture and tex.AddMaskTexture then
+    local m = owner:CreateMaskTexture()
+    m:SetTexture(ROUND, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    m:SetAllPoints(tex)
+    tex:AddMaskTexture(m)
+  elseif tex.SetMask then
+    pcall(tex.SetMask, tex, ROUND)
+  end
+end
+
 function UI.Text(parent, size, color, justify)
   local fs = parent:CreateFontString(nil, "OVERLAY")
   fs:SetFont(UI.Font(), size, "")

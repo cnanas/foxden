@@ -29,10 +29,8 @@ end
 
 local function nearby(level)
   local out = {}
-  local me = UnitName("player")
   for _, m in ipairs(ns.db and ns.db.roster and ns.db.roster.members or {}) do
-    local short = UI.ShortName(m.name or "")
-    if m.online and short ~= me and m.level and math.abs(m.level - level) <= 3 then out[#out + 1] = m end
+    if m.online and not ns.IsMe(m.name) and m.level and math.abs(m.level - level) <= 3 then out[#out + 1] = m end
   end
   table.sort(out, function(a, b) return math.abs(a.level - level) < math.abs(b.level - level) end)
   return out
@@ -106,7 +104,7 @@ function ns.ShowLevelUp(level, gains, seconds, preview)
   -- layout top to bottom
   local y = -78
   card.gains:ClearAllPoints(); card.gains:SetPoint("TOPLEFT", 20, y); y = y - card.gains:GetStringHeight() - 6
-  card.gains2:ClearAllPoints(); card.gains2:SetPoint("TOPLEFT", 20, y); if card.gains2:GetText() ~= "" then y = y - 20 end
+  card.gains2:ClearAllPoints(); card.gains2:SetPoint("TOPLEFT", 20, y); if (card.gains2:GetText() or "") ~= "" then y = y - 20 end
   y = y - 10
   card.newHead:ClearAllPoints(); card.newHead:SetPoint("TOPLEFT", 20, y); y = y - 22
 

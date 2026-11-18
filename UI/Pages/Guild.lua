@@ -25,6 +25,7 @@ local function pinsOn(cont)
   if not atlas then return pins end
   local now = GetServerTime()
   for key, l in pairs(ns.db.locations or {}) do
+    if atlas.maps and not atlas.maps[l.map] and ns.AtlasEnsure then ns.AtlasEnsure(l.map) end
     local z = atlas.maps and atlas.maps[l.map]
     if z and z.cont == cont and type(l.x) == "number" and now - (l.at or 0) < 7 * 86400 then
       local name = key:match("^[^-]+") or key
@@ -64,7 +65,7 @@ function page:Build(f)
     r.status:ClearAllPoints(); r.status:SetPoint("RIGHT", -12, 0)
     r.name:SetText(UI.ShortName(m.name)); r.name:SetTextColor(UI.ClassColor(m.class))
     r.level:SetText(m.level or ""); r.rank:SetText(m.rank or "")
-    local loc = self.locs and self.locs[m.name]
+    local loc = self.locs and self.locs[ns.SenderKey(m.name)]
     r.zone:SetText((m.zone or "—") .. (loc and m.online and string.format("  |cff999fb0%.1f, %.1f|r", loc.x / 10, loc.y / 10) or ""))
     r.zone:SetTextColor(unpack(m.online and C.text or C.dim))
     if m.online then r.dot:SetColorTexture(0.30, 0.78, 0.56, 1); r.status:SetText(m.mobile and "On mobile" or "Online")

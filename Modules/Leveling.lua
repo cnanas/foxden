@@ -119,7 +119,7 @@ local function onMessage(prefix, text, channel, sender)
   if prefix ~= ns.PREFIX or channel ~= "GUILD" or ns.IsSecret(text) or ns.IsSecret(sender) then return end
   local kind, level, class = strsplit("\t", text)
   if kind ~= "D" then return end
-  if not sender:find("-") then sender = sender .. "-" .. ((GetNormalizedRealmName and GetNormalizedRealmName()) or "") end
+  sender = ns.SenderKey(sender) -- "Name-Realm", without Forever's second name
   if sender == ns.CharKey() then return end
   level = tonumber(level)
   if level and level > 1 and level <= 200 then remember(sender:gsub("%-.*", ""), level, class ~= "" and class or nil) end

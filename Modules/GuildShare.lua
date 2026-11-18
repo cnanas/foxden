@@ -50,7 +50,7 @@ end
 
 local function onMessage(prefix, text, channel, sender)
   if prefix ~= PREFIX or channel ~= "GUILD" or ns.IsSecret(text) or ns.IsSecret(sender) then return end
-  if not sender:find("-") then sender = sender .. "-" .. ((GetNormalizedRealmName and GetNormalizedRealmName()) or "") end
+  sender = ns.SenderKey(sender) -- "Name-Realm", without Forever's second name
   if sender == ns.CharKey() then return end
   local c = ns.Crafting()
   if not c then return end

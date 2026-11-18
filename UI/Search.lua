@@ -26,7 +26,7 @@ local function build()
   if site then
     for slug, list in pairs(type(site.quests) == "table" and site.quests or {}) do
       local dn = bySlug[slug]
-      if dn then for _, q in ipairs(list) do add(q[2], "Quest", dn, "journal", { dungeon = dn, view = "quests" }) end end
+      if dn then for _, q in ipairs(list) do add(q[2], "Quest", dn, "journal", { dungeon = dn, view = "quests", quest = q[1] }) end end
     end
     for slug, bosses in pairs(type(site.loot) == "table" and site.loot or {}) do
       local dn = bySlug[slug]

@@ -10,7 +10,7 @@ local view = { key = "overview", label = "Overview", order = 10 }
 function view:Build(pane, width)
   self.pane = pane
   self.tiles = {}
-  for i, label in ipairs({ "Total time", "In combat", "Bosses", "Wipes" }) do
+  for i, label in ipairs({ "Total time", "In combat", "Bosses", "Wipes", "XP gained", "Gold looted" }) do
     local t = CreateFrame("Frame", nil, pane)
     t:SetHeight(54)
     UI.Fill(t, C.surface); UI.Border(t)
@@ -22,28 +22,32 @@ function view:Build(pane, width)
   self.partyHead = UI.SectionLabel(pane, "Party")
   self.bossHead = UI.SectionLabel(pane, "Bosses")
   self.partyLines, self.bossLines = {}, {}
-  for i = 1, 5 do
-    self.partyLines[i] = { UI.Text(pane, 12), UI.Text(pane, 11, C.dim, "RIGHT") }
-    self.bossLines[i] = { UI.Text(pane, 12), UI.Text(pane, 11, C.dim, "RIGHT") }
-  end
+  for i = 1, 5 do self.partyLines[i] = { UI.Text(pane, 12), UI.Text(pane, 11, C.dim, "RIGHT") } end
+  for i = 1, 12 do self.bossLines[i] = { UI.Text(pane, 12), UI.Text(pane, 11, C.dim, "RIGHT") } end
 end
 
 function view:Layout(width)
-  local tileW = (width - 3 * 8) / 4
+  -- six tiles in one row when there's room, else two rows of three
+  local perRow = width >= 840 and 6 or 3
+  local tileW = (width - (perRow - 1) * 8) / perRow
   for i, t in ipairs(self.tiles) do
-    t:ClearAllPoints(); t:SetPoint("TOPLEFT", (i - 1) * (tileW + 8), 0); t:SetWidth(tileW)
+    local col, row = (i - 1) % perRow, math.floor((i - 1) / perRow)
+    t:ClearAllPoints(); t:SetPoint("TOPLEFT", col * (tileW + 8), -row * 62); t:SetWidth(tileW)
   end
+  local top = -(math.ceil(#self.tiles / perRow) * 62 + 8)
   self.stats:SetPanelWidth(width)
-  self.stats:ClearAllPoints(); self.stats:SetPoint("TOPLEFT", 0, -70)
-  local colY = -70 - self.stats:GetHeight() - 12
+  self.stats:ClearAllPoints(); self.stats:SetPoint("TOPLEFT", 0, top)
+  local colY = top - self.stats:GetHeight() - 12
   local half = (width - 16) / 2
   self.partyHead:ClearAllPoints(); self.partyHead:SetPoint("TOPLEFT", 0, colY)
   self.bossHead:ClearAllPoints(); self.bossHead:SetPoint("TOPLEFT", half + 16, colY)
-  for i = 1, 5 do
+  for i = 1, #self.bossLines do
     local y = colY - 18 - (i - 1) * 18
-    local pn, pr = self.partyLines[i][1], self.partyLines[i][2]
-    pn:ClearAllPoints(); pn:SetPoint("TOPLEFT", 0, y); pn:SetWidth(half - 90)
-    pr:ClearAllPoints(); pr:SetPoint("TOPLEFT", half - 90, y); pr:SetWidth(90)
+    if self.partyLines[i] then
+      local pn, pr = self.partyLines[i][1], self.partyLines[i][2]
+      pn:ClearAllPoints(); pn:SetPoint("TOPLEFT", 0, y); pn:SetWidth(half - 90)
+      pr:ClearAllPoints(); pr:SetPoint("TOPLEFT", half - 90, y); pr:SetWidth(90)
+    end
     local bn, bt = self.bossLines[i][1], self.bossLines[i][2]
     bn:ClearAllPoints(); bn:SetPoint("TOPLEFT", half + 16, y); bn:SetWidth(half - 60)
     bt:ClearAllPoints(); bt:SetPoint("TOPLEFT", width - 60, y); bt:SetWidth(60)
@@ -53,7 +57,9 @@ end
 function view:Refresh(e)
   local run = e.run
   local combat = run.combatSeconds or 0
-  local values = { UI.Time(ns.RunDuration(e)), UI.Time(combat), tostring(run.bosses and #run.bosses or 0), tostring(run.wipes or 0) }
+  -- XP and gold come from the dungeon tracker; runs logged before it have neither
+  local values = { UI.Time(ns.RunDuration(e)), UI.Time(combat), tostring(run.bosses and #run.bosses or 0), tostring(run.wipes or 0),
+    run.xp and UI.Num(run.xp) or "|cff6b7280—|r", run.gold and ns.Money(run.gold) or "|cff6b7280—|r" }
   for i, t in ipairs(self.tiles) do t.value:SetText(values[i]) end
   local empty
   if not ns.MeterReady() and not next(run.stats or {}) then

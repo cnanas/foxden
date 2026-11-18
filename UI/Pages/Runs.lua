@@ -28,7 +28,7 @@ function page:Build(f)
   end, function(r, e)
     local run = e.run
     r.id = e.id
-    r.name:SetText(run.dungeon or "Unknown")
+    r.name:SetText(run.dungeon and ns.RunName(run) or "Unknown")
     if e.live then r.sub:SetText("In progress"); r.sub:SetTextColor(UI.Accent())
     else r.sub:SetTextColor(unpack(C.dim)); r.sub:SetText((run.difficulty and run.difficulty ~= "" and (run.difficulty .. ", ") or "") .. (run.endTime and date("%b %d, %H:%M", run.endTime) or "")) end
     r.time:SetText(UI.Time(ns.RunDuration(e)))
@@ -107,7 +107,7 @@ function page:Refresh(arg)
   if not has then return end
 
   local run = sel.run
-  d.title:SetText(run.dungeon or "Unknown")
+  d.title:SetText(run.dungeon and ns.RunName(run) or "Unknown")
   local bits = {}
   if run.difficulty and run.difficulty ~= "" then bits[#bits + 1] = run.difficulty end
   if sel.live then bits[#bits + 1] = "In progress" elseif run.endTime then bits[#bits + 1] = date("%A, %b %d at %H:%M", run.endTime) end

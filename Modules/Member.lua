@@ -99,10 +99,10 @@ function ns.WantedBy(itemID)
   local site = ns.Site and ns.Site()
   local s = site and type(site.wants) == "table" and site.wants[itemID]
   if type(s) ~= "string" or s == "" then return nil end
-  local mine, out = UnitName("player"), {}
+  local out = {}
   for entry in s:gmatch("[^,]+") do
     entry = entry:gsub("^%s+", ""):gsub("%s+$", "")
-    if entry:match("^[^%s(]+") ~= mine then out[#out + 1] = entry end
+    if not ns.IsMe(entry:match("^[^%s(]+")) then out[#out + 1] = entry end
   end
   return #out > 0 and table.concat(out, ", ") or nil
 end
@@ -135,7 +135,7 @@ function ns.LfgFor(slug)
   end
   local site = ns.Site and ns.Site()
   for _, r in ipairs(site and type(site.lfg) == "table" and site.lfg[slug] or {}) do
-    if not seen[r[1]] then seen[r[1]] = true; out[#out + 1] = { name = r[1], level = (r[2] or 0) > 0 and r[2] or nil, class = r[3] ~= "" and r[3] or nil } end
+    if not seen[r[1]] and not (seen[mine] and ns.IsMe(r[1])) then seen[r[1]] = true; out[#out + 1] = { name = r[1], level = (r[2] or 0) > 0 and r[2] or nil, class = r[3] ~= "" and r[3] or nil } end
   end
   return out
 end
@@ -192,7 +192,7 @@ function ns.QuestProgress(dungeonName)
   local f = faction == "Alliance" and "A" or faction == "Horde" and "H" or nil
   local p = { total = 0, done = 0, have = 0, missing = {} }
   for _, q in ipairs(rows) do
-    if q[3] == "" or not f or q[3] == f then
+    if q[3] == "" or q[3] == "B" or not f or q[3] == f then
       p.total = p.total + 1
       local st = ns.QuestState(q[1])
       if st == "done" then p.done = p.done + 1

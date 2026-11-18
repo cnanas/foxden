@@ -32,6 +32,7 @@ local NAV = {
   { key = "dungeons", label = "Dungeons", icon = "Interface\\Icons\\INV_Misc_Head_Dragon_01", pages = { "journal", "runs" } },
   { key = "crafting", label = "Crafting", icon = "Interface\\Icons\\Trade_BlackSmithing", pages = { "recipes", "planner", "crafters", "orders" } },
   { key = "guild", label = "Guild", icon = "Interface\\Icons\\INV_Shirt_GuildTabard_01", pages = { "roster", "rares", "leveling", "players" } },
+  { key = "questing", label = "Quests", icon = "Interface\\Icons\\INV_Misc_Book_08", pages = { "quests" } },
 }
 local function groupOf(key)
   for _, g in ipairs(NAV) do
@@ -43,7 +44,7 @@ end
 -- ---- helpers pages and views share -------------------------------------------
 
 function ns.RunDuration(entry)
-  if entry.live then return GetServerTime() - entry.run.startTime end
+  if entry.live then return ns.RunElapsed(entry.run) end
   return entry.run.duration or 0
 end
 
@@ -137,6 +138,30 @@ local function drawTabs(group, key)
   for i = #group.pages + 1, #tabButtons do tabButtons[i]:Hide() end
 end
 
+-- Settings, inside the window: the same page as Settings > AddOns > Foxden, borrowed from
+-- the game's panel (it takes it back when you open it there). The game's panel opens on
+-- the same layer as this window, so it could end up hidden behind it.
+local settingsHost
+function ns.ShowSettingsInWindow()
+  if not W then ns.ToggleWindow() end
+  if not W:IsShown() then W:Show() end
+  local root = ns.SettingsRoot
+  if not root then return end
+  if current and current.frame then current.frame:Hide() end
+  settingsHost = settingsHost or CreateFrame("Frame", nil, W.content)
+  settingsHost:SetAllPoints(W.content)
+  root:SetParent(settingsHost); root:ClearAllPoints(); root:SetAllPoints(settingsHost)
+  settingsHost:Show(); root:Show()
+  for _, b in ipairs(navButtons) do
+    b.sel:Hide(); b.bar:Hide(); b.icon:SetDesaturated(true); b.icon:SetAlpha(0.7); b.text:SetTextColor(unpack(C.dim))
+  end
+  drawTabs({ pages = {} }, nil)
+  W.tabTitle = W.tabTitle or UI.Text(W.tabs, 13, C.text)
+  W.tabTitle:ClearAllPoints(); W.tabTitle:SetPoint("BOTTOMLEFT", PAD + 10, 13); W.tabTitle:SetText("Settings"); W.tabTitle:Show()
+  if ns.RefreshSettings then ns.RefreshSettings() end
+end
+function ns.InWindowSettings() return settingsHost ~= nil and settingsHost:IsShown() end
+
 -- key: a page ("journal") or a place ("dungeons": opens the tab you last used there).
 function ns.OpenPage(key, arg)
   if not W then ns.ToggleWindow() end
@@ -150,6 +175,8 @@ function ns.OpenPage(key, arg)
   for _, p in ipairs(ns.pages) do if p.key == pkey then page = p end end
   if not page then return end
   if current and current ~= page and current.frame then current.frame:Hide() end
+  if settingsHost then settingsHost:Hide() end
+  if W.tabTitle then W.tabTitle:Hide() end
   current = page
   if not page.frame then
     page.frame = CreateFrame("Frame", nil, W.content)
@@ -202,7 +229,9 @@ local function build()
   local title = UI.Text(header, 16); title:SetPoint("LEFT", accent, "RIGHT", 10, 0); title:SetText("Foxden")
   local close = UI.CloseButton(header, function() W:Hide() end)
   close:SetPoint("RIGHT", -12, 0)
-  local settings = UI.Button(header, "Settings", 80, 26, function() ns.OpenSettings() end)
+  local settings = UI.Button(header, "Settings", 80, 26, function()
+    if ns.InWindowSettings() then ns.OpenPage(current and current.key or "overview") else ns.ShowSettingsInWindow() end
+  end)
   settings:SetPoint("RIGHT", close, "LEFT", -10, 0)
   local sync = UI.Button(header, "Send now", 84, 26, function() ns.Sync() end, "primary")
   sync:SetPoint("RIGHT", settings, "LEFT", -8, 0)

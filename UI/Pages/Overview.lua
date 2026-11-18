@@ -44,7 +44,7 @@ local function questCount(name)
   local mine = UnitFactionGroup and UnitFactionGroup("player")
   local f = mine == "Alliance" and "A" or mine == "Horde" and "H" or nil
   local n = 0
-  for _, q in ipairs(rows) do if q[3] == "" or not f or q[3] == f then n = n + 1 end end
+  for _, q in ipairs(rows) do if q[3] == "" or q[3] == "B" or not f or q[3] == f then n = n + 1 end end
   return n
 end
 
@@ -175,12 +175,11 @@ function page:Refresh()
   local g = self.guild
   local members = ns.db and ns.db.roster and ns.db.roster.members or {}
   local online, near = 0, {}
-  local me = UnitName("player")
   for _, m in ipairs(members) do
     if m.online then
       online = online + 1
       local short = UI.ShortName(m.name or "")
-      if short ~= me and m.level and math.abs(m.level - level) <= 4 then near[#near + 1] = short .. " " .. m.level end
+      if not ns.IsMe(m.name) and m.level and math.abs(m.level - level) <= 4 then near[#near + 1] = short .. " " .. m.level end
     end
   end
   if #members == 0 then

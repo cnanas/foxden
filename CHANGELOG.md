@@ -1,5 +1,54 @@
 # Foxden
 
+## 2.3.0
+
+### Fixed
+- Quest marks stopped drawing ("Couldn't draw quest marks (quest details)") after opening the details of a quest that can be shared.
+
+### Dungeon runs
+- **Run summary:** when the last boss dies, a summary pops up once you're out of combat: time, XP, gold, and every boss with the time it died, plus **Full summary** for the whole run. It also shows if you leave before the last boss. Turn it off in Settings (**Run summary**), or bring it back with `/fox summary`.
+- **The clock starts on your first pull,** not when you zone in, and **stops at the last boss**, so a run's time is pull to final kill. Looting and walking out afterwards don't count.
+- **Loot:** the summary shows everything your group looted (icons, best first; hover for who got it and which boss dropped it, shift-click to link). The full run has a new **Loot** tab with the whole list.
+- **Wings:** Scarlet Monastery, Dire Maul, Blackrock Spire and Stratholme count as the wing you're in (Graveyard, Library, Armory, Cathedral; East, West, North; Lower and Upper; Main Gate and Service Entrance). The tracker, the summary and the run list show only that wing's bosses, and the run ends at the wing's last boss. Foxden tells the wing from the zone text on the way in, or from the first boss you kill.
+- **Boss portraits in the tracker** for bosses nobody in the guild has fought yet, from the looks the Dungeons page reads.
+- **Click the dungeon tracker** to open the run in Foxden; right-click a boss on it for its loot. It also says how many bosses are left.
+- The run summary shows **XP gained** and **Gold looted**, and lists every boss (it stopped at five).
+
+### Dungeons page
+- A new layout: pick a dungeon from the menu at the top (or scroll over it, or use the arrows), then **Map, Bosses, Quests** and **Runs** tabs. Bosses have portraits, a 3D model and their loot as item cards.
+- Quests show the right faction. Many were marked "Both factions" by mistake; quests Foxden can't place yet now say "Faction not known yet".
+- **Bosses** show their level on a badge over a round portrait, and loot that drops from many bosses is folded under **Show shared loot**.
+- **Quest chains:** the picked quest opens to show its whole chain, with the steps you've done ticked. The quest itself says which step you're on, and **Show on map** points to the next step you need.
+- **Guild notes on quests,** written on the website's dungeon page, and **Guides online**: a link to the quest's Wowhead Forever page (with player comments) to copy into your browser.
+- **Trash tab:** items that drop only from a dungeon's trash mobs (not its bosses), with the mobs that drop them, worked out from the QuestieDB addon's data.
+- **Entrance** button on a dungeon: the arrow points to its entrance and the world map opens there (QuestieDB's dungeon list).
+- Profession quests show only when you have that profession at that level (the count of hidden ones is shown); quests your race can't take are greyed out with the reason.
+- **Loot filter** (boss loot and trash): only loot your class can use, hide recipes, only gear with the stats you pick.
+- Faction filter is now the two crests: click the other one to list its quests too.
+
+### Quests (Foxden can replace a quest helper now)
+- **Quest givers on the map:** a ! on every quest giver with a quest you can pick up (your faction, race, class and level, with whatever it needs first done), and a ? where finished quests are turned in. Hover for the quests, their objectives and the XP each gives you at your level; hold Shift for gold and item rewards. Quest givers standing close together share one mark with a count. From QuestieDB's data for WoW Forever: read from the QuestieDB addon when you have it (it comes with Questie, and has Forever's new zones like Riverglades), else Foxden's own copy.
+- **Minimap marks:** the same marks on your minimap for the ones nearby, turning with it if your minimap rotates.
+- **Quest tracker:** your quests at the side of the screen, grouped by zone (the zone you're in first; click a zone to fold it), with levels in difficulty colours, "Dungeon" and "Group" tags, live objective progress and "Ready to turn in" with whom. Click a quest to open its details beside the tracker (works in combat): text, live objectives, turn-in, chain, guild note, and the rewards as item icons to hover, shift-click to link or ctrl-click to try on, with Map, Arrow, Link, Share (when you're in a group and the quest can be shared) and Abandon (asks first). Hover a quest for its full card: description, objectives, who to turn it in to and where, XP, gold, items and reputation, its quest chain and the guild's note. Quests with an item to use get a button beside them (click to use it, with its cooldown). Click a quest to see it on the map, right-click for a map pin to its turn-in, shift-click to link it. Drag the title to move it. The game's own quest tracker (and EllesmereUI's) is hidden while Foxden's is on.
+- **Quests page** (new place in the sidebar, or the gear on the tracker): what the quest helper knows and shows right now, and all its settings: map and minimap marks, mark size, how far above your level, grey quests, and the tracker's text size, width, background and lock. `/fox quests` prints the same check in chat.
+
+### Getting there
+- **Waypoint arrow:** an arrow on screen that points to the NPC you're heading for, with how far it is; it turns green as you head straight for it and says "Arrived" when you're there. Click it to target the NPC, right-click to stop, drag to move it. Set it by right-clicking a quest in the tracker or a mark on the map, "Arrow to turn-in" in the quest details, or "Show on map" on the Dungeons page.
+- **Item sources in tooltips:** any item tooltip (bags, loot rolls, chat links) says which boss or quest it comes from. Key binding (Key Bindings > Foxden): open the hovered item on the Dungeons page.
+- The Dungeons page fills in Forever's new dungeon quests (where they start and end, levels, objectives, quest chains) from the QuestieDB addon when you have it.
+
+### World map
+- **Dungeon quests on the map:** a mark on every quest giver with a dungeon quest you can pick up, including the earlier steps of its chain (The Defias Brotherhood before Red Silk Bandanas, and so on). Hover for the quests and where they lead; click to open the quest in Foxden. Quests far above or below your level are left out. Turn it off in Settings (**Dungeon quests on the world map**).
+- **Learns Forever's new quest chains as you play:** no database has the chains for Forever's new dungeons yet, so Foxden notes which quest an NPC gives you right after you turn one in, and the guild's website joins them into chains for everyone.
+
+### Fixes
+- Recipe materials were missing from tooltips and the Recipes page.
+- You showed up in your own "Guildmates near your level" (level-up card and Home), and could get rare alerts for rares you found yourself.
+- Guildmates were sometimes counted twice (Forever adds a second name to players in guild messages), which showed you twice on the guild map.
+- Guildmates in zones you've never visited now show on the guild map.
+- Dropdown menus no longer get covered by other parts of the window.
+- **Settings** opens inside the Foxden window (the game's own settings window could open hidden behind it). It's still under the game's Settings > AddOns too.
+
 ## 2.2.1
 
 - **Fixed:** errors on login about unknown events ("TRADE_SKILL_UPDATE", "LEARNED_SPELL_IN_TAB"). They also stopped recipe scanning and trainer tracking from working. Foxden now skips any event the game doesn't have.

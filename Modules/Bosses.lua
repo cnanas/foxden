@@ -50,6 +50,7 @@ ns.RegisterModule({
       end
       run._encounterLog = run._encounterLog or {}
       table.insert(run._encounterLog, { id = encounterID, name = encounterName, kill = kill })
+      if kill and ns.CheckRunDone then ns.CheckRunDone() end
       ns.Changed()
     end,
   },

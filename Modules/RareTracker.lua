@@ -114,7 +114,7 @@ local function onMessage(prefix, text, channel, sender)
   id, map, x, y = tonumber(id), tonumber(map), tonumber(x), tonumber(y)
   if not id or not (ns.Rares and ns.Rares[id]) or (what ~= "seen" and what ~= "killed") then return end
   local who = sender:gsub("%-.*", "")
-  if who == UnitName("player") then return end
+  if ns.IsMe(sender) then return end
   record(id, what, map and map > 0 and map or nil, x and x > 0 and x or nil, y and y > 0 and y or nil, who)
   if what == "seen" and ns.settings.rareAlerts ~= false then
     local r = ns.Rares[id]

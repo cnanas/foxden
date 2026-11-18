@@ -448,7 +448,9 @@ function toLua(v) {
   if (typeof v === 'boolean') return v ? 'true' : 'false';
   if (typeof v === 'string') return '"' + v.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '') + '"';
   if (Array.isArray(v)) return '{' + v.map(toLua).join(',') + '}';
-  return '{' + Object.entries(v).map(([k, x]) => `[${toLua(k)}]=${toLua(x)}`).join(',') + '}';
+  // JSON object keys are always strings; write whole-number keys (item IDs, recipe IDs) as Lua numbers
+  // so the addon can look them up by ID.
+  return '{' + Object.entries(v).map(([k, x]) => `[${/^-?[1-9]\d{0,14}$/.test(k) ? k : toLua(k)}]=${toLua(x)}`).join(',') + '}';
 }
 function siteDataPath() {
   const root = config.savedVariablesFile.split(/[\\/]WTF[\\/]/)[0];
@@ -468,7 +470,7 @@ async function writeSiteData(crafting) {
     data.links = {};
     for (const [k, url] of Object.entries(craftState.pages || {})) data.links[k] = { stock: url, orders: url.replace('/stock?', '/requests?') };
     const { at, ...rest } = data; // "at" changes every call; compare the rest
-    const hash = createHash('sha256').update(JSON.stringify(rest)).digest('hex');
+    const hash = createHash('sha256').update('lua-v2' + JSON.stringify(rest)) // bump the tag when the Lua output changes.digest('hex');
     if (hash === craftState.exportHash && fs.existsSync(file)) return;
     fs.writeFileSync(file, `-- Written by the Foxden companion. Don't edit: it's replaced after each sync.\nFoxdenSiteData = ${toLua(data)}\n`);
     craftState.exportHash = hash; saveCraftState();

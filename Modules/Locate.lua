@@ -65,7 +65,7 @@ end
 
 local function onMessage(prefix, text, channel, sender)
   if prefix ~= PREFIX or channel ~= "GUILD" or ns.IsSecret(text) or ns.IsSecret(sender) then return end
-  if not sender:find("-") then sender = sender .. "-" .. ((GetNormalizedRealmName and GetNormalizedRealmName()) or "") end
+  sender = ns.SenderKey(sender) -- "Name-Realm", without Forever's second name
   if sender == ns.CharKey() or not ns.db then return end
   ns.db.locations = ns.db.locations or {}
   local kind, map, x, y, zone = strsplit("\t", text)
@@ -85,6 +85,17 @@ ns.RegisterModule({
   name = "Locate",
   events = {
     PLAYER_LOGIN = function()
+      -- earlier versions saved "First Second-Realm" keys too: merge them into "First-Realm"
+      local locs = ns.db and ns.db.locations
+      if locs then
+        for key, l in pairs(locs) do
+          local k = ns.SenderKey(key)
+          if k ~= key then
+            locs[key] = nil
+            if not locs[k] or (locs[k].at or 0) < (l.at or 0) then locs[k] = l end
+          end
+        end
+      end
       C_Timer.NewTicker(10, tick) -- checks every 10s; actually sends at most every 30s and only when moved
     end,
     CHAT_MSG_ADDON = function(_, _, prefix, text, channel, sender) onMessage(prefix, text, channel, sender) end,

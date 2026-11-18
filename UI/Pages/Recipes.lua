@@ -365,7 +365,7 @@ function page:ShowDetail(site, c)
   y = y - (d.who:GetStringHeight() or 14) - 14
 
   local canRequest = m and m.takers ~= nil
-  local canWhisper = other ~= nil and other ~= me
+  local canWhisper = other ~= nil and not ns.IsMe(other)
   for _, el in ipairs({ d.qtyLabel, d.minus, d.qty, d.plus }) do el:SetShown(true) end
   d.request:SetShown(canRequest); d.whisper:SetShown(canWhisper); d.ask:Show()
   do

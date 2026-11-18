@@ -1,20 +1,60 @@
--- Page: Journal. Every dungeon: its map with boss pins, each boss's
--- description, abilities and loot (from the game's own Encounter Journal),
--- the guild's tips (written on the website), and the guild's own record.
+-- Page: Dungeons. Pick a dungeon at the top; a header card shows its name, levels and who
+-- wants to run it, with tabs for its Map, Bosses, Quests and the guild's Runs.
+--   Bosses: a list of boss cards (round portrait with the boss's level, the guild's record) and,
+--           for the one picked, its portrait, loot as item cards (loot that drops from many
+--           bosses folded away), abilities and the guild's tips.
+--   Quests: quest cards (level, faction, done or in your log); the picked one opens to show its
+--           quest chain. The detail side shows the objective, where it starts and ends (with map
+--           pins), where you are in the chain, the guild's note, rewards and a link to read more online.
 
 local _, ns = ...
 local UI = ns.UI
 local C = UI.C
-local LIST_W, PAD = 220, 16
+local PAD, PICK_H, HEAD_H, GAP = 16, 28, 86, 12
 local ROLE_TAG = { tank = "Tank", damage = "DPS", healer = "Healer", deadly = "Deadly", important = "Important",
   interruptible = "Interrupt", magic = "Magic", curse = "Curse", poison = "Poison", disease = "Disease", enrage = "Enrage" }
+local CIRCLE = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
+local SKULL_ICON = "Interface\\Icons\\INV_Misc_Bone_HumanSkull_01"
 
 local page = { key = "journal", label = "Dungeons", order = 30 }
-local selDungeon, selBoss, selFloor
-local jview = "bosses" -- or "quests", "runs"
-local questsAll = false -- show the other faction's quests too
+local selDungeon, selBoss, selFloor, selQuest
+local jview = "bosses" -- or "map", "quests", "runs"
+local showFaction -- { A = true/false, H = true/false }; starts as your own faction
+local showShared, showChain, showLink = false, false, false
 
 local function hex(r, g, b) return string.format("|cff%02x%02x%02x", math.floor(r * 255 + 0.5), math.floor(g * 255 + 0.5), math.floor(b * 255 + 0.5)) end
+
+-- A game texture by atlas name when this client has it, else a texture file.
+local function art(tex, atlas, file, l, r, t, b)
+  if atlas and C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(atlas) then
+    tex:SetAtlas(atlas)
+  else
+    tex:SetTexture(file)
+    if l then tex:SetTexCoord(l, r, t, b) else tex:SetTexCoord(0, 1, 0, 1) end
+  end
+end
+local function round(tex) UI.Round(tex:GetParent(), tex) end
+local function crest(tex, f)
+  if f == "A" then art(tex, "MountJournalIcons-Alliance", "Interface\\TargetingFrame\\UI-PVP-Alliance", 0, 0.625, 0, 0.625)
+  else art(tex, "MountJournalIcons-Horde", "Interface\\TargetingFrame\\UI-PVP-Horde", 0, 0.625, 0, 0.625) end
+end
+local function questIcon(tex, state)
+  if state == "done" then tex:SetTexture("Interface\\RaidFrame\\ReadyCheck-Ready"); tex:SetTexCoord(0, 1, 0, 1)
+  elseif state == "have" then art(tex, "QuestTurnin", "Interface\\GossipFrame\\ActiveQuestIcon")
+  else art(tex, "QuestNormal", "Interface\\GossipFrame\\AvailableQuestIcon") end
+end
+
+-- A flat panel: surface fill and a hairline border.
+local function panel(parent)
+  local p = CreateFrame("Frame", nil, parent)
+  UI.Fill(p, C.surface); UI.Border(p)
+  return p
+end
+local function heading(parent, text)
+  local t = UI.Text(parent, 14); t:SetText(text); return t
+end
+
+-- ---- data --------------------------------------------------------------------------
 
 -- Every Forever dungeon and raid (Data/Dungeons.lua), the game's journal when it has data,
 -- and anything else you've run. Sorted by level like the game's dungeon list; raids last.
@@ -36,6 +76,11 @@ local function dungeonList()
     return a.name < b.name
   end)
   return list
+end
+
+local function levelsOf(e)
+  local l = e.static and e.static.levels
+  return l and #l == 2 and (l[1] .. "-" .. l[2]) or nil
 end
 
 -- Bosses: the journal's, or the ones killed in your runs. Pins: journal, else where the map recorder saw them.
@@ -60,7 +105,35 @@ local function bossesOf(e)
       if not seen[b.name] then seen[b.name] = true; bosses[#bosses + 1] = { name = b.name, n = #bosses + 1, pins = {} } end
     end
   end
+  -- level and rare flag (QuestieDB, Data/Dungeons.lua)
+  local st = {}
+  for _, b in ipairs(e.static and e.static.bosses or {}) do st[b.name] = b end
+  for _, b in ipairs(bosses) do local x = st[b.name]; if x then b.level, b.rare = x.level, x.rare end end
   return bosses
+end
+
+-- Loot the website lists under 3 or more of a dungeon's bosses: world drops with a low chance,
+-- folded away under "Show shared loot" so each boss shows its own loot first.
+local sharedCache = {}
+local function sharedOf(e)
+  local site = ns.Site()
+  local byBoss = site and type(site.loot) == "table" and site.loot[ns.Slug(e.name)]
+  if type(byBoss) ~= "table" then return {} end
+  local c = sharedCache[e.name]
+  if c and c.src == byBoss then return c.set end
+  local count, nb = {}, 0
+  for _, list in pairs(byBoss) do
+    nb = nb + 1
+    local seen = {}
+    for _, it in ipairs(type(list) == "table" and list or {}) do
+      local id = type(it) == "table" and it[1]
+      if id and not seen[id] then seen[id] = true; count[id] = (count[id] or 0) + 1 end
+    end
+  end
+  local set = {}
+  if nb >= 3 then for id, n in pairs(count) do if n >= 3 then set[id] = true end end end
+  sharedCache[e.name] = { src = byBoss, set = set }
+  return set
 end
 
 -- What a boss looks like: a display ID Foxden noted in a fight (or a guildmate's, from the
@@ -85,8 +158,52 @@ local function visual(e, name)
   for _, run in ipairs(e.stats and e.stats.runs or {}) do
     for _, k in ipairs(run.bosses or {}) do if k.name == name then look = look or k.look; npc = npc or k.npc end end
   end
+  if not look and npc and ns.db and ns.db.npcLooks then look = ns.db.npcLooks[npc] end
   return look, npc
 end
+
+-- The flat boss portraits need a display ID; many bosses only have an NPC ID. A hidden model
+-- loads each one once and reads its display ID, kept in FoxdenDB.npcLooks.
+local resolver, queue, tried, dirty = nil, {}, {}, false
+local function resolveNext()
+  local npc = table.remove(queue, 1)
+  if not npc then
+    if resolver then resolver.busy = false end
+    if dirty then dirty = false; if ns.RefreshUI then ns.RefreshUI() end; if ns.RefreshTracker then ns.RefreshTracker() end end
+    return
+  end
+  resolver.busy, resolver.npc = true, npc
+  local token = {}
+  resolver.token = token
+  if resolver.ClearModel then pcall(resolver.ClearModel, resolver) end
+  if not pcall(resolver.SetCreature, resolver, npc) then return resolveNext() end
+  -- no answer in time: skip it (reading the model now could give the previous creature's ID)
+  C_Timer.After(2, function() if resolver.token == token then resolver.token = nil; resolveNext() end end)
+end
+local function resolveLooks(npcs)
+  if not ns.db or #npcs == 0 or not CreateFrame then return end
+  ns.db.npcLook = nil -- the first version saved wrong IDs
+  ns.db.npcLooks = ns.db.npcLooks or {}
+  if not resolver then
+    resolver = CreateFrame("PlayerModel", nil, UIParent)
+    resolver:SetSize(2, 2); resolver:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 0, 0); resolver:SetAlpha(0)
+    function resolver.finish()
+      resolver.token = nil
+      local ok, d = pcall(resolver.GetDisplayInfo, resolver)
+      -- the same ID as the creature before is a stale read, not this one
+      if ok and type(d) == "number" and d > 0 and d ~= resolver.last and resolver.npc then
+        ns.db.npcLooks[resolver.npc] = d; resolver.last = d; dirty = true
+      end
+      resolveNext()
+    end
+    resolver:SetScript("OnModelLoaded", function() if resolver.token then resolver.finish() end end)
+  end
+  for _, npc in ipairs(npcs) do
+    if not tried[npc] and not ns.db.npcLooks[npc] then tried[npc] = true; queue[#queue + 1] = npc end
+  end
+  if not resolver.busy then resolveNext() end
+end
+ns.ResolveNpcLooks = resolveLooks -- the dungeon tracker asks for its bosses too
 
 local function floorsOf(e)
   if e.journal and #(e.journal.floors or {}) > 0 then return e.journal.floors end
@@ -113,24 +230,56 @@ local function bossRecord(e, name)
   end
   return kills, wipes, fastest
 end
-
-local function itemName(id)
-  if C_Item and C_Item.GetItemNameByID then local n = C_Item.GetItemNameByID(id); if n then return n end end
-  if GetItemInfo then local n = GetItemInfo(id); if n then return n end end
-  return "Item " .. id
+local function recordText(e, name)
+  local kills, wipes, fastest = bossRecord(e, name)
+  if kills + wipes == 0 then return "Not fought by the guild yet" end
+  return string.format("%d %s, %d %s%s", kills, kills == 1 and "kill" or "kills", wipes, wipes == 1 and "wipe" or "wipes",
+    fastest and (", fastest " .. UI.Time(fastest)) or "")
 end
 
-local function detailText(e, boss)
+-- A boss's loot: the game's journal, drops the guild has seen, and the website's list.
+local function lootOf(e, boss)
+  local loot = {}
+  if boss.j and #(boss.j.loot or {}) > 0 then
+    for _, id in ipairs(boss.j.loot) do loot[#loot + 1] = { id = id } end
+    return loot, nil
+  end
+  local count, order = {}, {}
+  for _, r in ipairs(e.stats and e.stats.runs or {}) do
+    for _, l in ipairs(r.loot or {}) do
+      if l.b == boss.name and l.i then
+        if not count[l.i] then order[#order + 1] = l.i end
+        count[l.i] = (count[l.i] or 0) + 1
+      end
+    end
+  end
+  local site = ns.Site()
+  local listed = site and type(site.loot) == "table" and site.loot[ns.Slug(e.name)] and site.loot[ns.Slug(e.name)][boss.name]
+  local names = {}
+  for _, it in ipairs(listed or {}) do
+    if type(it) == "table" and it[1] then
+      names[it[1]] = it[2]
+      if not count[it[1]] then order[#order + 1] = it[1]; count[it[1]] = 0 end
+    end
+  end
+  for _, id in ipairs(order) do loot[#loot + 1] = { id = id, seen = count[id], name = names[id] } end
+  local n = {}
+  if #order == 0 then n[#n + 1] = "Nothing recorded yet. Foxden notes what this boss drops in your runs." end
+  if listed and #listed > 0 then n[#n + 1] = "Loot tables for classic dungeons: QuestieDB (GPLv3)." end
+  if e.static then n[#n + 1] = "Boss list: ForeverDungeonRoutes by Checkov23 (MIT)." end
+  return loot, table.concat(n, "\n")
+end
+
+-- Description, abilities and the guild's tips, as one block of text.
+local function bossText(e, boss)
   local ar, ag, ab = UI.Accent()
   local head = hex(ar, ag, ab)
   local dim = hex(C.dim[1], C.dim[2], C.dim[3])
   local lines = {}
-  local function section(title) lines[#lines + 1] = "\n" .. head .. title .. "|r" end
+  local function section(title) lines[#lines + 1] = (#lines > 0 and "\n" or "") .. head .. title .. "|r" end
   local j = boss.j
-  local loot, note = {}, nil -- loot rows are drawn as item buttons below the text
   if j and j.desc and j.desc ~= "" then lines[#lines + 1] = j.desc end
-
-  if j and #j.sections > 0 then
+  if j and #(j.sections or {}) > 0 then
     section("Abilities")
     for _, s in ipairs(j.sections) do
       local tags = {}
@@ -139,8 +288,6 @@ local function detailText(e, boss)
       if s.d and s.d ~= "" then lines[#lines + 1] = string.rep("    ", (s.depth or 0) + 1) .. dim .. s.d .. "|r" end
     end
   end
-
-  -- guild tips come from the website snapshot (written by guild members)
   local site = ns.Site()
   local tips = {}
   for _, t in ipairs(site and site.tips or {}) do
@@ -156,236 +303,49 @@ local function detailText(e, boss)
   else
     lines[#lines + 1] = dim .. "No tips yet. Guild members add them on the website's Journal page, then they show here the next time you log in.|r"
   end
-
-  if j and #j.loot > 0 then
-    section("Loot")
-    local names = {}
-    for _, id in ipairs(j.loot) do names[#names + 1] = itemName(id) end
-    lines[#lines + 1] = table.concat(names, ", ")
-  end
-
-  local kills, wipes, fastest = bossRecord(e, boss.name)
-  section("The guild's record")
-  if kills + wipes > 0 then
-    lines[#lines + 1] = string.format("%d %s, %d %s%s", kills, kills == 1 and "kill" or "kills", wipes, wipes == 1 and "wipe" or "wipes",
-      fastest and (", fastest kill " .. UI.Time(fastest)) or "")
-  else
-    lines[#lines + 1] = dim .. "No fights against this boss in your logged runs yet.|r"
-  end
-  if not j then
-    -- loot the guild has seen drop from this boss (recorded in runs)
-    local count, order = {}, {}
-    for _, r in ipairs(e.stats and e.stats.runs or {}) do
-      for _, l in ipairs(r.loot or {}) do
-        if l.b == boss.name and l.i then
-          if not count[l.i] then order[#order + 1] = l.i end
-          count[l.i] = (count[l.i] or 0) + 1
-        end
-      end
-    end
-    -- plus the website's list (QuestieDB for classic dungeons, and the whole guild's drops)
-    local site = ns.Site()
-    local listed = site and type(site.loot) == "table" and site.loot[ns.Slug(e.name)] and site.loot[ns.Slug(e.name)][boss.name]
-    local names = {}
-    for _, it in ipairs(listed or {}) do
-      if type(it) == "table" and it[1] then
-        names[it[1]] = it[2]
-        if not count[it[1]] then order[#order + 1] = it[1]; count[it[1]] = 0 end
-      end
-    end
-    for _, id in ipairs(order) do loot[#loot + 1] = { id = id, seen = count[id], name = names[id] } end
-    local n = {}
-    if #order == 0 then n[#n + 1] = "Nothing recorded yet. Foxden notes what this boss drops in your runs." end
-    if listed and #listed > 0 then n[#n + 1] = "Loot tables for classic dungeons: QuestieDB (GPLv3)." end
-    if e.static then n[#n + 1] = "Boss list: ForeverDungeonRoutes by Checkov23 (MIT)." end
-    note = table.concat(n, "\n")
-  end
-  return table.concat(lines, "\n"), loot, note
+  return table.concat(lines, "\n")
 end
 
-function page:Build(f)
-  self.list = UI.List(f, 44, function(r)
-    r.name = UI.Text(r, 13); r.name:SetPoint("TOPLEFT", 14, -7); r.name:SetPoint("RIGHT", r, "RIGHT", -10, 0)
-    r.sub = UI.Text(r, 11, C.dim); r.sub:SetPoint("TOPLEFT", r.name, "BOTTOMLEFT", 0, -4)
-    r:SetScript("OnClick", function(row) selDungeon, selBoss, selFloor = row.dname, nil, nil; ns.RefreshUI() end)
-  end, function(r, e)
-    r.dname = e.name
-    r.name:SetText(e.name)
-    local bits = {}
-    if e.static and e.static.levels and #e.static.levels == 2 then bits[#bits + 1] = "levels " .. e.static.levels[1] .. "-" .. e.static.levels[2] end
-    local nb = e.journal and #e.journal.bosses or (e.static and #e.static.bosses) or 0
-    if nb > 0 then bits[#bits + 1] = nb .. " bosses" end
-    if e.stats then bits[#bits + 1] = #e.stats.runs .. (#e.stats.runs == 1 and " run" or " runs") end
-    if e.stats and e.stats.best then bits[#bits + 1] = "best " .. UI.Time(e.stats.best.duration) end
-    r.sub:SetText(table.concat(bits, ", "))
-    self.list:Select(r, e.name == selDungeon)
-  end)
-  self.list:SetPoint("TOPLEFT"); self.list:SetPoint("BOTTOMLEFT"); self.list:SetWidth(LIST_W)
-  UI.Fill(self.list, { 0, 0, 0, 0.12 })
-
-  self.title = UI.Text(f, 20)
-  self.sub = UI.Text(f, 12, C.dim); self.sub:SetWordWrap(true)
-  self.lfg = UI.Button(f, "I want to run this", 150, 24, function()
-    if not selDungeon then return end
-    local on = ns.ToggleLfg(ns.Slug(selDungeon))
-    if on then ns.SendNow("You're listed as wanting " .. selDungeon .. ".")
-    else ns.say("You're no longer listed for " .. selDungeon .. ".") end
-    ns.RefreshUI()
-  end)
-  self.lfgWho = UI.Text(f, 11, C.dim); self.lfgWho:SetWordWrap(false)
-  self.floorButtons = {}
-  self.map = UI.MapCanvas(f)
-  self.map.onPin = function(name) selBoss = name; ns.RefreshUI() end
-  self.mapNote = UI.Text(f, 11, C.faint); self.mapNote:SetWordWrap(true)
-
-  self.bosses = UI.List(f, 30, function(r)
-    r.n = UI.Text(r, 11, C.faint); r.n:SetPoint("LEFT", 10, 0)
-    r.name = UI.Text(r, 13); r.name:SetPoint("LEFT", 30, 0); r.name:SetPoint("RIGHT", r, "RIGHT", -8, 0)
-    r:SetScript("OnClick", function(row) selBoss = row.bname; ns.RefreshUI() end)
-  end, function(r, b)
-    r.bname = b.name
-    r.n:SetText(b.n); r.name:SetText(b.name)
-    self.bosses:Select(r, b.name == selBoss)
-  end)
-  UI.Fill(self.bosses, { 0, 0, 0, 0.12 })
-
-  -- boss detail: one rich text block in a scroll frame
-  self.scroll = CreateFrame("ScrollFrame", nil, f)
-  self.scroll:EnableMouseWheel(true)
-  self.detail = CreateFrame("Frame", nil, self.scroll)
-  self.scroll:SetScrollChild(self.detail)
-  self.bossTitle = UI.Text(self.detail, 16)
-  self.bossTitle:SetPoint("TOPLEFT", 0, 0)
-  -- the boss's own model, drawn by the game
-  self.portraitBox = CreateFrame("Frame", nil, self.detail); self.portraitBox:SetSize(76, 76); self.portraitBox:SetPoint("TOPLEFT")
-  UI.Fill(self.portraitBox, C.surface); UI.Border(self.portraitBox)
-  self.portrait = CreateFrame("PlayerModel", nil, self.portraitBox); self.portrait:SetPoint("TOPLEFT", 1, -1); self.portrait:SetPoint("BOTTOMRIGHT", -1, 1)
-  self.portraitBox:Hide()
-  self.body = UI.Text(self.detail, 12, C.text)
-  self.body:SetPoint("TOPLEFT", 0, -28)
-  self.body:SetWordWrap(true); self.body:SetJustifyV("TOP")
-  self.lootHead = UI.Text(self.detail, 12); UI.Accented(self.lootHead); self.lootHead:SetText("Loot")
-  self.lootNote = UI.Text(self.detail, 11, C.dim); self.lootNote:SetWordWrap(true); self.lootNote:SetJustifyV("TOP")
-  self.lootRows = {}
-  self.scroll:SetScript("OnMouseWheel", function(s, d)
-    local max = math.max(0, (self.detail:GetHeight() or 0) - (s:GetHeight() or 0))
-    s:SetVerticalScroll(math.max(0, math.min(max, (s:GetVerticalScroll() or 0) - d * 40)))
-  end)
-
-  -- Bosses / Quests
-  self.viewTabs = {}
-  for _, v in ipairs({ { "bosses", "Bosses" }, { "quests", "Quests" }, { "runs", "Runs" } }) do
-    local b = CreateFrame("Button", nil, f)
-    b.key = v[1]
-    b.bg = UI.Fill(b, C.raised); b.bg:Hide()
-    b.text = UI.Text(b, 12, C.dim, "CENTER"); b.text:SetPoint("CENTER"); b.text:SetText(v[2])
-    b.under = b:CreateTexture(nil, "ARTWORK"); b.under:SetPoint("BOTTOMLEFT"); b.under:SetPoint("BOTTOMRIGHT"); b.under:SetHeight(2)
-    b:SetSize(92, 26)
-    b:SetScript("OnClick", function() jview = v[1]; ns.RefreshUI() end)
-    self.viewTabs[#self.viewTabs + 1] = b
-  end
-  -- this dungeon's runs
-  self.runList = UI.List(f, 44, function(r)
-    r.name = UI.Text(r, 13); r.name:SetPoint("TOPLEFT", 14, -7)
-    r.sub = UI.Text(r, 11, C.dim); r.sub:SetPoint("TOPLEFT", r.name, "BOTTOMLEFT", 0, -4)
-    r.time = UI.Text(r, 13, C.text, "RIGHT"); r.time:SetPoint("TOPRIGHT", -14, -7)
-    r.meta = UI.Text(r, 11, C.dim, "RIGHT"); r.meta:SetPoint("TOPRIGHT", r.time, "BOTTOMRIGHT", 0, -4)
-    r:SetScript("OnClick", function(row) ns.OpenPage("runs", row.id) end)
-  end, function(r, run)
-    r.id = run.id
-    r.name:SetText(run.endTime and date("%b %d, %H:%M", run.endTime) or "Run")
-    local names = {}
-    for _, m in ipairs(run.party or {}) do names[#names + 1] = m.name end
-    r.sub:SetText(#names > 0 and table.concat(names, ", ") or (run.loggedBy and ("Logged by " .. run.loggedBy) or ""))
-    r.time:SetText(UI.Time(run.duration or 0))
-    local b, w = run.bosses and #run.bosses or 0, run.wipes or 0
-    r.meta:SetText(b .. (b == 1 and " boss" or " bosses") .. (w > 0 and (", " .. w .. (w == 1 and " wipe" or " wipes")) or ""))
-  end)
-  UI.Fill(self.runList, { 0, 0, 0, 0.12 })
-  self.runEmpty = UI.Text(f, 12, C.dim); self.runEmpty:SetWordWrap(true)
-  self.runEmpty:SetText("No runs of this dungeon logged yet. Walk in and Foxden records it on its own.")
-
-  self.qscroll = CreateFrame("ScrollFrame", nil, f)
-  self.qscroll:EnableMouseWheel(true)
-  self.qbody = CreateFrame("Frame", nil, self.qscroll)
-  self.qscroll:SetScrollChild(self.qbody)
-  self.qblocks = {}
-  self.qempty = UI.Text(self.qbody, 12, C.dim); self.qempty:SetPoint("TOPLEFT"); self.qempty:SetWordWrap(true)
-  self.qfilter = UI.Button(self.qbody, "Show both factions", 150, 24, function() questsAll = not questsAll; ns.RefreshUI() end)
-  self.qfilter:SetPoint("TOPLEFT")
-  self.qfilterNote = UI.Text(self.qbody, 11, C.dim); self.qfilterNote:SetPoint("LEFT", self.qfilter, "RIGHT", 12, 0)
-  self.qnote = UI.Text(self.qbody, 11, C.faint); self.qnote:SetWordWrap(true)
-  self.qnote:SetText("Quest text and rewards: Blizzard Entertainment. Quest givers, locations, levels and objectives: QuestieDB (GPLv3) for classic dungeons; for the new dungeons, Foxden learns where quests start and end as the guild picks them up and turns them in. ")
-  self.qscroll:SetScript("OnMouseWheel", function(s, d)
-    local max = math.max(0, (self.qbody:GetHeight() or 0) - (s:GetHeight() or 0))
-    s:SetVerticalScroll(math.max(0, math.min(max, (s:GetVerticalScroll() or 0) - d * 40)))
-  end)
-
-  self.empty = UI.Text(f, 13, C.dim, "CENTER"); self.empty:SetWordWrap(true)
-  self.empty:SetText("No dungeons yet. Run a dungeon and it appears here.")
-end
-
-function page:Layout(w, h)
-  self.w, self.h = w, h
-  local x, dw = LIST_W + PAD + 1, w - LIST_W - PAD * 2 - 1
-  self.title:ClearAllPoints(); self.title:SetPoint("TOPLEFT", x, -PAD); self.title:SetWidth(dw - 290)
-  self.sub:ClearAllPoints(); self.sub:SetPoint("TOPLEFT", self.title, "BOTTOMLEFT", 0, -6); self.sub:SetWidth(dw)
-  self.lfg:ClearAllPoints(); self.lfg:SetPoint("TOPLEFT", x, -PAD - 58)
-  self.lfgWho:ClearAllPoints(); self.lfgWho:SetPoint("LEFT", self.lfg, "RIGHT", 10, 0); self.lfgWho:SetWidth(dw - 170)
-  -- map on the left (3:2), bosses + detail on the right
-  local mapW = math.floor(dw * 0.56)
-  local mapH = math.floor(mapW / 1.5)
-  local top = -PAD - 84
-  if mapH > h + top - PAD - 30 then mapH = h + top - PAD - 30; mapW = math.floor(mapH * 1.5) end
-  self.mapX, self.mapY, self.mapW, self.mapH = x, top, mapW, mapH
-  self.map:ClearAllPoints(); self.map:SetPoint("TOPLEFT", x, top)
-  self.mapNote:ClearAllPoints(); self.mapNote:SetPoint("TOPLEFT", x, top - mapH - 6); self.mapNote:SetWidth(mapW)
-  local rx, rw = x + mapW + 16, dw - mapW - 16
-  local bossH = math.min(30 * 8, math.floor((h + top - PAD) * 0.4))
-  self.bosses:ClearAllPoints(); self.bosses:SetPoint("TOPLEFT", rx, top - 32); self.bosses:SetSize(rw, bossH)
-  self.scroll:ClearAllPoints(); self.scroll:SetPoint("TOPLEFT", rx, top - 32 - bossH - 12); self.scroll:SetSize(rw, h + top - 32 - bossH - 12 - PAD)
-  self.detail:SetWidth(rw - 8)
-  self.bossTitle:SetWidth(rw - 8); self.body:SetWidth(rw - 8)
-  local tx = x + dw
-  for i = #self.viewTabs, 1, -1 do
-    local b = self.viewTabs[i]
-    tx = tx - b:GetWidth()
-    b:ClearAllPoints(); b:SetPoint("TOPLEFT", tx, -PAD)
-  end
-  self.qscroll:ClearAllPoints(); self.qscroll:SetPoint("TOPLEFT", x, top + 30); self.qscroll:SetSize(dw, h + top + 30 - PAD)
-  self.runList:ClearAllPoints(); self.runList:SetPoint("TOPLEFT", x, top + 30); self.runList:SetSize(dw, h + top + 30 - PAD)
-  self.runEmpty:ClearAllPoints(); self.runEmpty:SetPoint("TOPLEFT", x + 14, top + 16); self.runEmpty:SetWidth(dw - 28)
-  self.qbody:SetWidth(dw - 12); self.qempty:SetWidth(dw - 12)
-  self.empty:ClearAllPoints(); self.empty:SetPoint("CENTER", LIST_W / 2, 0); self.empty:SetWidth(dw - 40)
-end
-
--- ---- loot rows: the game's own item data (icon, quality colour, tooltip) ---------------
+-- ---- item cards: the game's own item data (icon, quality colour, slot, tooltip) ---------
 local waitingItems = false
 local function itemLook(id, fallback)
-  local name, link, quality
-  if C_Item and C_Item.GetItemInfo then name, link, quality = C_Item.GetItemInfo(id)
-  elseif GetItemInfo then name, link, quality = GetItemInfo(id) end
+  local name, link, quality, _, _, itype, subtype, _, equipLoc, _, _, classID
+  if C_Item and C_Item.GetItemInfo then name, link, quality, _, _, itype, subtype, _, equipLoc, _, _, classID = C_Item.GetItemInfo(id)
+  elseif GetItemInfo then name, link, quality, _, _, itype, subtype, _, equipLoc, _, _, classID = GetItemInfo(id) end
   if not name then
     waitingItems = true
     if C_Item and C_Item.RequestLoadItemDataByID then pcall(C_Item.RequestLoadItemDataByID, id) end
   end
   local icon = (C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(id)) or (GetItemIcon and GetItemIcon(id)) or 134400
-  return name or fallback or ("Item " .. id), link, quality, icon
+  -- "Neck", "Wrist, Cloth", "One-Hand, Sword"
+  local slot = equipLoc and equipLoc ~= "" and _G[equipLoc] or nil
+  local kind = (classID == 2 or classID == 4) and subtype and subtype ~= "" and subtype ~= MISCELLANEOUS and subtype ~= "Miscellaneous" and subtype or nil
+  local sub = slot and (kind and (slot .. ", " .. kind) or slot) or (itype ~= "" and itype or nil)
+  return name or fallback or ("Item " .. id), link, quality, icon, sub
+end
+local function qualityRGB(quality)
+  if quality and C_Item and C_Item.GetItemQualityColor then local r, g, b = C_Item.GetItemQualityColor(quality); return r or 1, g or 1, b or 1 end
+  if quality and GetItemQualityColor then local r, g, b = GetItemQualityColor(quality); return r or 1, g or 1, b or 1 end
+  return 1, 1, 1
 end
 
-local function lootRow(parent)
-  local r = CreateFrame("Button", nil, parent); r:SetHeight(24)
-  r.icon = r:CreateTexture(nil, "ARTWORK"); r.icon:SetSize(20, 20); r.icon:SetPoint("LEFT")
-  r.name = UI.Text(r, 12); r.name:SetPoint("LEFT", r.icon, "RIGHT", 8, 0)
+local function itemCard(parent, h)
+  local r = CreateFrame("Button", nil, parent); r:SetHeight(h or 46)
+  UI.Fill(r, C.raised); UI.Border(r)
+  local hover = UI.Fill(r, C.hover, "ARTWORK"); hover:Hide()
+  r.icon = r:CreateTexture(nil, "ARTWORK"); r.icon:SetSize((h or 46) - 12, (h or 46) - 12); r.icon:SetPoint("LEFT", 6, 0)
+  r.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+  r.name = UI.Text(r, 13); r.name:SetPoint("TOPLEFT", r.icon, "TOPRIGHT", 10, -2)
+  r.slot = UI.Text(r, 11, C.dim); r.slot:SetPoint("BOTTOMLEFT", r.icon, "BOTTOMRIGHT", 10, 2)
   -- wishlist star (boss loot only)
-  r.star = CreateFrame("Button", nil, r); r.star:SetSize(20, 20); r.star:SetPoint("RIGHT", -2, 0)
+  r.star = CreateFrame("Button", nil, r); r.star:SetSize(20, 20); r.star:SetPoint("RIGHT", -10, 0)
   r.star.tex = r.star:CreateTexture(nil, "ARTWORK"); r.star.tex:SetAllPoints()
   r.star.tex:SetTexture("Interface\\Common\\ReputationStar"); r.star.tex:SetTexCoord(0, 0.5, 0, 0.5)
   r.star:RegisterForClicks("LeftButtonUp", "RightButtonUp")
   r.star:SetScript("OnClick", function(b, which)
     local row = b:GetParent()
     if not row.id or not row.wish then return end
-    local name = row.name:GetText()
+    local name = row.itemName or row.name:GetText()
     local kind
     if which == "RightButton" then kind = ns.SetWish(row.id, nil) else kind = ns.CycleWish(row.id, name, row.wish.boss, row.wish.dungeon) end
     ns.say(kind and (name .. ": on your wishlist as " .. ns.WISH_LABEL[kind]:lower() .. ".") or (name .. " removed from your wishlist."))
@@ -402,8 +362,9 @@ local function lootRow(parent)
   r.star:SetScript("OnLeave", GameTooltip_Hide)
   r.star:Hide()
   r.seen = UI.Text(r, 11, C.dim, "RIGHT"); r.seen:SetPoint("RIGHT", r.star, "LEFT", -8, 0)
-  local hover = UI.Fill(r, C.hover, "BACKGROUND"); hover:Hide()
+  r.name:SetPoint("RIGHT", r.seen, "LEFT", -8, 0); r.slot:SetPoint("RIGHT", r.seen, "LEFT", -8, 0)
   r:SetScript("OnEnter", function(self)
+    if not self.id then return end
     hover:Show()
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
     if not pcall(GameTooltip.SetItemByID, GameTooltip, self.id) then GameTooltip:AddLine(self.name:GetText() or "") end
@@ -416,6 +377,415 @@ local function lootRow(parent)
   end)
   return r
 end
+local function fillCard(r, id, fallback)
+  local name, link, quality, icon, sub = itemLook(id, fallback)
+  r.id, r.link, r.itemName = id, link, name
+  r.icon:SetTexture(icon); r.name:SetText(name); r.name:SetTextColor(qualityRGB(quality))
+  r.slot:SetText(sub or "")
+  r.seen:SetText(""); r.star:Hide()
+end
+
+-- ---- quests (from the website: Blizzard's quest text and rewards, QuestieDB givers) -----
+-- row: { id, title, faction, level, minLevel, giver, area, map, x, y, ender, objective, after, xp, money, rep, items, choice, text, endMap, endX, endY }
+local function factionShown()
+  if not showFaction then
+    local mine = UnitFactionGroup and UnitFactionGroup("player")
+    showFaction = { A = mine ~= "Horde", H = mine ~= "Alliance" }
+  end
+  return showFaction
+end
+local hiddenProf = 0
+local function questsOf(e)
+  hiddenProf = 0
+  local site = ns.Site()
+  local rows = site and type(site.quests) == "table" and site.quests[ns.Slug(e.name)] or {}
+  local sf = factionShown()
+  local out = {}
+  for _, q in ipairs(rows) do
+    -- "B": either faction; "": not known yet (shown, so nothing is hidden by mistake)
+    if type(q) == "table" and ns.Quests then q = ns.Quests.Enrich(q) end -- QuestieDB fills the gaps
+    local lock, why
+    if type(q) == "table" and ns.Quests then lock, why = ns.Quests.Locked(q[1]) end
+    if type(q) == "table" and (q[3] == "" or q[3] == "B" or sf[q[3]]) then
+      -- profession quests you can't take are left out (counted); race-locked ones are greyed
+      if why == "profession" and not (ns.settings and ns.settings.showProfQuests) then hiddenProf = hiddenProf + 1
+      else q.locked = lock; out[#out + 1] = q end
+    end
+  end
+  return out, #rows
+end
+
+-- Where to read guides and player comments online: Wowhead's WoW Forever quest page. Same rule as
+-- the website (site/lib/quests.ts questUrl).
+function ns.QuestUrl(q)
+  local slug = tostring(q[2] or ""):lower():gsub("’", ""):gsub("'", ""):gsub("[^%w]+", "-"):gsub("^%-+", ""):gsub("%-+$", "")
+  return "https://www.wowhead.com/forever/quest=" .. q[1] .. (slug ~= "" and ("/" .. slug) or "")
+end
+
+-- The quest's chain ({ {id, title, giver, map, x, y, min level, faction, level}, ... }, this quest included), which step this quest is, and the
+-- first step you haven't done (nil when you've done them all).
+local function chainOf(q)
+  local chain = q[23]
+  if type(chain) ~= "table" or #chain < 2 then return nil end
+  local k, cur
+  for i, step in ipairs(chain) do
+    if step[1] == q[1] then k = i end
+    if not cur and not (ns.QuestState and ns.QuestState(step[1]) == "done") then cur = i end
+  end
+  return chain, k or 1, cur
+end
+-- The chain as numbered lines: done steps green with a tick, this quest in the accent colour.
+-- Long chains show the steps around this one.
+local TICK = " |TInterface\\RaidFrame\\ReadyCheck-Ready:12:12|t"
+local function chainLines(chain, k)
+  local ar, ag, ab = UI.Accent()
+  local first, last = 1, #chain
+  if #chain > 10 then first, last = math.max(1, k - 4), math.min(#chain, k + 4) end
+  local out = {}
+  if first > 1 then out[#out + 1] = "|cff6b7280   ...|r" end
+  for i = first, last do
+    local step = chain[i]
+    local st = ns.QuestState and ns.QuestState(step[1])
+    local line = i .. ". " .. tostring(step[2])
+    if i == k then line = hex(ar, ag, ab) .. line .. "|r" .. (st == "done" and TICK or "")
+    elseif st == "done" then line = "|cff6fd39a" .. line .. "|r" .. TICK
+    elseif st == "have" then line = "|cffe8c35a" .. line .. "  (in your log)|r"
+    else line = "|cffc8ccd4" .. line .. "|r" end
+    out[#out + 1] = line
+  end
+  if last < #chain then out[#out + 1] = "|cff6b7280   ... " .. #chain .. " steps|r" end
+  return table.concat(out, "\n")
+end
+local function questNote(q)
+  local site = ns.Site()
+  local notes = site and type(site.questNotes) == "table" and site.questNotes
+  local n = notes and (notes[q[1]] or notes[tostring(q[1])])
+  if type(n) == "table" and type(n[1]) == "string" and n[1] ~= "" then return n[1], n[2] end
+end
+local FACTION = { A = "Alliance", H = "Horde", B = "Both factions", [""] = "Faction not known yet" }
+local function questLevel(q)
+  if (q[4] or 0) == 0 then return "" end
+  return "Level " .. q[4] .. (((q[5] or 0) > 0 and q[5] ~= q[4]) and (", from " .. q[5]) or "")
+end
+
+local function pinOnMap(map, x, y, name)
+  if not (map and map > 0) then return false end
+  -- the arrow (works everywhere), and the game's own pin where that works
+  local ok = ns.SetArrow and ns.SetArrow(map, x, y, name) or false
+  if C_Map and C_Map.SetUserWaypoint and UiMapPoint and not (C_Map.CanSetUserWaypointOnMap and not C_Map.CanSetUserWaypointOnMap(map)) then
+    pcall(function()
+      C_Map.SetUserWaypoint(UiMapPoint.CreateFromCoordinates(map, x / 100, y / 100))
+      if C_SuperTrack and C_SuperTrack.SetSuperTrackedUserWaypoint then C_SuperTrack.SetSuperTrackedUserWaypoint(true) end
+    end)
+  end
+  ns.say(string.format("Arrow to %s (%d, %d).", name, math.floor(x + 0.5), math.floor(y + 0.5)))
+  return ok
+end
+
+-- ---- build ---------------------------------------------------------------------------
+
+local function scrollArea(parent)
+  local s = CreateFrame("ScrollFrame", nil, parent)
+  s:EnableMouseWheel(true)
+  local body = CreateFrame("Frame", nil, s)
+  s:SetScrollChild(body)
+  s:SetScript("OnMouseWheel", function(sf, d)
+    local max = math.max(0, (body:GetHeight() or 0) - (sf:GetHeight() or 0))
+    sf:SetVerticalScroll(math.max(0, math.min(max, (sf:GetVerticalScroll() or 0) - d * 40)))
+  end)
+  return s, body
+end
+
+function page:Build(f)
+  self.f = f
+  -- dungeon picker: < [dropdown] >
+  local function step(d)
+    local list = dungeonList()
+    for i, x in ipairs(list) do
+      if x.name == selDungeon then
+        local n = list[((i - 1 + d) % #list) + 1]
+        selDungeon, selBoss, selFloor, selQuest = n.name, nil, nil, nil
+        self:Refresh(); return
+      end
+    end
+  end
+  self.prev = UI.Button(f, "<", 28, PICK_H, function() step(-1) end)
+  self.picker = UI.Dropdown(f, 320, "Dungeon", function(v) selDungeon, selBoss, selFloor, selQuest = v, nil, nil, nil; self:Refresh() end)
+  self.picker:SetHeight(PICK_H)
+  self.next = UI.Button(f, ">", 28, PICK_H, function() step(1) end)
+  self.prev:SetPoint("TOPLEFT", 0, 0)
+  self.picker:SetPoint("LEFT", self.prev, "RIGHT", 6, 0)
+  self.next:SetPoint("LEFT", self.picker, "RIGHT", 6, 0)
+
+  -- header card
+  self.head = panel(f)
+  self.title = UI.Text(self.head, 22); self.title:SetPoint("TOPLEFT", 16, -14)
+  self.sub = UI.Text(self.head, 12, C.dim); self.sub:SetPoint("TOPLEFT", self.title, "BOTTOMLEFT", 0, -6)
+  self.lfgWho = UI.Text(self.head, 11, C.faint); self.lfgWho:SetPoint("TOPLEFT", self.sub, "BOTTOMLEFT", 0, -6)
+  self.lfg = UI.Button(self.head, "I want to run this", 150, 24, function()
+    if not selDungeon then return end
+    local on = ns.ToggleLfg(ns.Slug(selDungeon))
+    if on then ns.SendNow("You're listed as wanting " .. selDungeon .. ".")
+    else ns.say("You're no longer listed for " .. selDungeon .. ".") end
+    ns.RefreshUI()
+  end)
+  self.lfg:SetPoint("BOTTOMRIGHT", -14, 12)
+  -- loot filter (boss loot and trash drops)
+  self.filterBtn = UI.Button(self.head, "Loot filter", 110, 24, function(b) if ns.LootFilter then ns.LootFilter.Toggle(b) end end)
+  self.filterBtn:SetPoint("RIGHT", self.lfg, "LEFT", -8, 0)
+  -- the dungeon's entrance: the arrow points there, and the world map opens on it
+  self.entranceBtn = UI.Button(self.head, "Entrance", 90, 24, function()
+    local e = self.entry
+    local map, x, y = e and ns.DungeonEntrance and ns.DungeonEntrance(e.name)
+    if not map then ns.say("Foxden doesn't know where " .. (e and e.name or "this dungeon") .. "'s entrance is yet."); return end
+    if ns.SetArrow then ns.SetArrow(map, x, y, e.name .. " entrance") end
+    if OpenWorldMap then pcall(OpenWorldMap, map) end
+    ns.say(string.format("Arrow to %s's entrance (%d, %d).", e.name, math.floor(x + 0.5), math.floor(y + 0.5)))
+  end)
+
+  -- Trash: items the dungeon's trash mobs drop (from QuestieDB, Core/Trash.lua)
+  self.trashPanel = panel(f)
+  self.trashHead = heading(self.trashPanel, "Trash drops"); self.trashHead:SetPoint("TOPLEFT", 14, -12)
+  self.trashNote = UI.Text(self.trashPanel, 11, C.dim); self.trashNote:SetPoint("TOPLEFT", self.trashHead, "BOTTOMLEFT", 0, -6)
+  self.trashNote:SetWordWrap(true)
+  self.trashScroll, self.trashBody = scrollArea(self.trashPanel)
+  self.trashRows = {}
+  if ns.Trash then ns.Trash.OnReady(function() if self.trashPanel:IsVisible() then ns.RefreshUI() end end) end
+
+  -- view tabs, with game icons
+  self.viewTabs = {}
+  local tabs = {
+    { "map", "Map", function(t) t:SetTexture("Interface\\Icons\\INV_Misc_Map_01"); t:SetTexCoord(0.07, 0.93, 0.07, 0.93) end },
+    { "bosses", "Bosses", function(t) t:SetTexture("Interface\\TargetingFrame\\UI-TargetingFrame-Skull"); t:SetTexCoord(0, 1, 0, 1) end },
+    { "quests", "Quests", function(t) questIcon(t, "new") end },
+    { "trash", "Trash", function(t) t:SetTexture("Interface\\Icons\\INV_Misc_Bag_10"); t:SetTexCoord(0.07, 0.93, 0.07, 0.93) end },
+    { "runs", "Runs", function(t) t:SetTexture("Interface\\Icons\\INV_Misc_PocketWatch_01"); t:SetTexCoord(0.07, 0.93, 0.07, 0.93) end },
+  }
+  for _, v in ipairs(tabs) do
+    local b = CreateFrame("Button", nil, self.head)
+    b.key = v[1]
+    UI.Fill(b, C.raised); UI.Border(b)
+    b.bg = b:CreateTexture(nil, "ARTWORK"); b.bg:SetAllPoints(); UI.Accented(b.bg, 0.14); b.bg:Hide()
+    b.under = b:CreateTexture(nil, "OVERLAY"); b.under:SetPoint("BOTTOMLEFT"); b.under:SetPoint("BOTTOMRIGHT"); b.under:SetHeight(2)
+    b.icon = b:CreateTexture(nil, "OVERLAY"); b.icon:SetSize(18, 18); b.icon:SetPoint("LEFT", 10, 0); v[3](b.icon)
+    b.text = UI.Text(b, 12, C.dim); b.text:SetPoint("LEFT", b.icon, "RIGHT", 7, 0)
+    b.text:SetText(v[2])
+    b:SetSize(104, 30)
+    local hover = UI.Fill(b, C.hover, "HIGHLIGHT")
+    b:SetScript("OnClick", function() jview = v[1]; ns.RefreshUI() end)
+    self.viewTabs[#self.viewTabs + 1] = b
+  end
+
+  -- Bosses: list on the left, the picked boss on the right
+  self.bossPanel = panel(f)
+  self.bossHead = heading(self.bossPanel, "Bosses"); self.bossHead:SetPoint("TOPLEFT", 14, -12)
+  self.bosses = UI.List(self.bossPanel, 68, function(r)
+    r.tint = r:CreateTexture(nil, "BACKGROUND", nil, 1); r.tint:SetAllPoints(); UI.Accented(r.tint, 0.10); r.tint:Hide()
+    r.ring = r:CreateTexture(nil, "ARTWORK"); r.ring:SetSize(54, 54); r.ring:SetPoint("LEFT", 14, 0)
+    r.ring:SetColorTexture(1, 1, 1, 0.22); round(r.ring)
+    -- Masked textures can't be changed much afterwards (the game refuses tex coords on them),
+    -- so only textures that never change get a mask. The portrait the game makes is round already.
+    r.por = r:CreateTexture(nil, "ARTWORK", nil, 1); r.por:SetSize(50, 50); r.por:SetPoint("CENTER", r.ring)
+    r.skull = r:CreateTexture(nil, "ARTWORK", nil, 1); r.skull:SetSize(50, 50); r.skull:SetPoint("CENTER", r.ring)
+    r.skull:SetTexture(SKULL_ICON); round(r.skull)
+    -- the boss's level, in a badge on the portrait
+    r.badgeRing = r:CreateTexture(nil, "OVERLAY"); r.badgeRing:SetSize(24, 24); r.badgeRing:SetPoint("BOTTOMLEFT", r.ring, "BOTTOMLEFT", -5, -5)
+    UI.Accented(r.badgeRing); round(r.badgeRing)
+    r.badge = r:CreateTexture(nil, "OVERLAY", nil, 1); r.badge:SetSize(21, 21); r.badge:SetPoint("CENTER", r.badgeRing)
+    r.badge:SetColorTexture(unpack(C.bg)); round(r.badge)
+    r.num = UI.Text(r, 10, C.text, "CENTER"); r.num:SetPoint("CENTER", r.badge, "CENTER", 0, 0); r.num:SetDrawLayer("OVERLAY", 2)
+    r.rare = UI.Text(r, 10, C.dim, "RIGHT"); r.rare:SetPoint("TOPRIGHT", -14, -14); r.rare:SetText("RARE"); UI.Accented(r.rare)
+    r.name = UI.Text(r, 14); r.name:SetPoint("TOPLEFT", r.ring, "TOPRIGHT", 14, -9); r.name:SetPoint("RIGHT", r.rare, "LEFT", -8, 0)
+    r.sub = UI.Text(r, 11, C.dim); r.sub:SetPoint("TOPLEFT", r.name, "BOTTOMLEFT", 0, -6); r.sub:SetPoint("RIGHT", r, "RIGHT", -12, 0)
+    r:SetScript("OnClick", function(row) selBoss = row.bname; showShared = false; ns.RefreshUI() end)
+  end, function(r, b)
+    r.bname = b.name
+    r.name:SetText(b.name); r.num:SetText(b.level or "??")
+    r.rare:SetShown(b.rare == true)
+    local e = self.entry
+    local look = e and visual(e, b.name)
+    local ok = look and SetPortraitTextureFromCreatureDisplayID and pcall(SetPortraitTextureFromCreatureDisplayID, r.por, look)
+    r.por:SetShown(ok and true or false); r.skull:SetShown(not ok)
+    r.sub:SetText(e and ("Boss " .. b.n .. "  ·  " .. recordText(e, b.name)) or "")
+    local on = b.name == selBoss
+    self.bosses:Select(r, on)
+    r.tint:SetShown(on)
+    if on then r.name:SetTextColor(UI.Accent()) else r.name:SetTextColor(unpack(C.text)) end
+  end)
+
+  self.detailPanel = panel(f)
+  self.scroll, self.detail = scrollArea(self.detailPanel)
+  -- the boss's own model, drawn by the game
+  self.portraitBox = CreateFrame("Frame", nil, self.detail); self.portraitBox:SetSize(96, 96); self.portraitBox:SetPoint("TOPLEFT")
+  UI.Fill(self.portraitBox, C.bg); UI.Border(self.portraitBox)
+  self.portrait = CreateFrame("PlayerModel", nil, self.portraitBox); self.portrait:SetPoint("TOPLEFT", 1, -1); self.portrait:SetPoint("BOTTOMRIGHT", -1, 1)
+  self.portraitBox:Hide()
+  -- the round portrait (when the boss's look is known), with its level badge
+  local big = CreateFrame("Frame", nil, self.detail); big:SetSize(96, 96); big:SetPoint("TOPLEFT")
+  big.ring = big:CreateTexture(nil, "ARTWORK"); big.ring:SetAllPoints(); big.ring:SetColorTexture(1, 1, 1, 0.22); round(big.ring)
+  big.por = big:CreateTexture(nil, "ARTWORK", nil, 1); big.por:SetSize(90, 90); big.por:SetPoint("CENTER")
+  big.badgeRing = big:CreateTexture(nil, "OVERLAY"); big.badgeRing:SetSize(32, 32); big.badgeRing:SetPoint("BOTTOMLEFT", -4, -4)
+  UI.Accented(big.badgeRing); round(big.badgeRing)
+  big.badge = big:CreateTexture(nil, "OVERLAY", nil, 1); big.badge:SetSize(28, 28); big.badge:SetPoint("CENTER", big.badgeRing)
+  big.badge:SetColorTexture(unpack(C.bg)); round(big.badge)
+  big.level = UI.Text(big, 13, C.text, "CENTER"); big.level:SetPoint("CENTER", big.badge); big.level:SetDrawLayer("OVERLAY", 2)
+  big:Hide()
+  self.big = big
+  self.sharedBtn = UI.Button(self.detail, "", 200, 24, function() showShared = not showShared; ns.RefreshUI() end)
+  self.sharedNote = UI.Text(self.detail, 11, C.faint)
+  self.bossTitle = UI.Text(self.detail, 18)
+  self.bossSub = UI.Text(self.detail, 12, C.dim)
+  self.lootHead = UI.Text(self.detail, 13); UI.Accented(self.lootHead); self.lootHead:SetText("Loot")
+  self.lootRows = {}
+  self.body = UI.Text(self.detail, 12, C.text); self.body:SetWordWrap(true); self.body:SetJustifyV("TOP")
+  self.lootNote = UI.Text(self.detail, 11, C.faint); self.lootNote:SetWordWrap(true); self.lootNote:SetJustifyV("TOP")
+
+  -- Map
+  self.mapPanel = panel(f)
+  self.floorButtons = {}
+  self.map = UI.MapCanvas(self.mapPanel)
+  self.map.onPin = function(name) selBoss = name; jview = "bosses"; ns.RefreshUI() end
+  self.mapNote = UI.Text(self.mapPanel, 11, C.faint); self.mapNote:SetWordWrap(true)
+
+  -- Quests: cards on the left (the picked one opens to show its chain), the picked quest on the right
+  self.qPanel = panel(f)
+  self.qHead = heading(self.qPanel, "Quests"); self.qHead:SetPoint("TOPLEFT", 14, -12)
+  self.qfilterNote = UI.Text(self.qPanel, 11, C.dim); self.qfilterNote:SetPoint("TOPLEFT", self.qHead, "BOTTOMLEFT", 0, -6)
+  -- faction crests: your own is on; click the other one to list its quests too
+  self.fbtn = {}
+  for _, fac in ipairs({ "A", "H" }) do
+    local b = CreateFrame("Button", nil, self.qPanel); b:SetSize(32, 32)
+    UI.Fill(b, C.raised); UI.Border(b)
+    b.on = b:CreateTexture(nil, "ARTWORK"); b.on:SetAllPoints(); UI.Accented(b.on, 0.18)
+    b.icon = b:CreateTexture(nil, "OVERLAY"); b.icon:SetSize(24, 24); b.icon:SetPoint("CENTER"); crest(b.icon, fac)
+    UI.Fill(b, C.hover, "HIGHLIGHT")
+    b.fac = fac
+    b:SetScript("OnClick", function(btn)
+      local sf = factionShown()
+      sf[btn.fac] = not sf[btn.fac]
+      if not sf.A and not sf.H then sf[btn.fac == "A" and "H" or "A"] = true end
+      ns.RefreshUI()
+    end)
+    b:SetScript("OnEnter", function(btn)
+      GameTooltip:SetOwner(btn, "ANCHOR_TOP")
+      GameTooltip:SetText((btn.fac == "A" and "Alliance" or "Horde") .. " quests: " .. (factionShown()[btn.fac] and "shown" or "hidden"))
+      GameTooltip:AddLine("Click to show or hide them. Quests for both factions are always listed.", 1, 1, 1, true)
+      GameTooltip:Show()
+    end)
+    b:SetScript("OnLeave", GameTooltip_Hide)
+    self.fbtn[fac] = b
+  end
+  self.fbtn.H:SetPoint("TOPRIGHT", -12, -10); self.fbtn.A:SetPoint("RIGHT", self.fbtn.H, "LEFT", -6, 0)
+  self.qlistScroll, self.qcards = scrollArea(self.qPanel)
+  self.cards = {}
+  self.qempty = UI.Text(self.qPanel, 12, C.dim); self.qempty:SetWordWrap(true)
+
+  self.qdPanel = panel(f)
+  self.qscroll, self.qbody = scrollArea(self.qdPanel)
+  local qd = {}
+  self.qd = qd
+  qd.title = UI.Text(self.qbody, 18); qd.title:SetPoint("TOPLEFT"); qd.title:SetWordWrap(true)
+  qd.meta = UI.Text(self.qbody, 12, C.dim)
+  qd.c1 = self.qbody:CreateTexture(nil, "ARTWORK"); qd.c1:SetSize(20, 20)
+  qd.c2 = self.qbody:CreateTexture(nil, "ARTWORK"); qd.c2:SetSize(20, 20)
+  qd.status = UI.Text(self.qbody, 12)
+  qd.line = self.qbody:CreateTexture(nil, "BORDER"); qd.line:SetColorTexture(unpack(C.line)); qd.line:SetHeight(1)
+  qd.text = UI.Text(self.qbody, 12, C.text); qd.text:SetWordWrap(true); qd.text:SetJustifyV("TOP")
+  qd.chainLine = UI.Text(self.qbody, 12); qd.chainLine:SetWordWrap(true)
+  qd.chainBtn = UI.Button(self.qbody, "Show quest chain", 130, 24, function() showChain = not showChain; ns.RefreshUI() end)
+  qd.pin = UI.Button(self.qbody, "Show on map", 110, 24, function(btn) local t = btn.target; if t then pinOnMap(t[1], t[2], t[3], t[4]) end end)
+  qd.pinEnd = UI.Button(self.qbody, "Pin the turn-in", 120, 24, function(btn) local q = btn.q; if q then pinOnMap(q[20], q[21], q[22], q[11] ~= "" and q[11] or q[6] ~= "" and q[6] or "the turn-in") end end)
+  qd.linkBtn = UI.Button(self.qbody, "Guides online", 116, 24, function() showLink = not showLink; ns.RefreshUI() end)
+  qd.chainBox = CreateFrame("Frame", nil, self.qbody); UI.Fill(qd.chainBox, C.bg); UI.Border(qd.chainBox)
+  qd.chainText = UI.Text(qd.chainBox, 12); qd.chainText:SetWordWrap(true); qd.chainText:SetJustifyV("TOP"); qd.chainText:SetSpacing(4)
+  qd.chainText:SetPoint("TOPLEFT", 12, -10)
+  qd.link = UI.CopyBox(self.qbody, 300)
+  qd.linkHint = UI.Text(self.qbody, 11, C.faint); qd.linkHint:SetWordWrap(true)
+  qd.linkHint:SetText("Wowhead's WoW Forever page for this quest, with guides and player comments. Click the box, press Ctrl+C, then paste it in your browser.")
+  qd.noteHead = UI.Text(self.qbody, 13); UI.Accented(qd.noteHead); qd.noteHead:SetText("Guild note")
+  qd.note = UI.Text(self.qbody, 12, C.text); qd.note:SetWordWrap(true); qd.note:SetJustifyV("TOP")
+  qd.chooseHead = UI.Text(self.qbody, 13); UI.Accented(qd.chooseHead)
+  qd.alsoHead = UI.Text(self.qbody, 13); UI.Accented(qd.alsoHead)
+  qd.money = UI.Text(self.qbody, 12, C.text); qd.money:SetWordWrap(true)
+  qd.rows = {}
+  qd.story = UI.Text(self.qbody, 11, C.dim); qd.story:SetWordWrap(true); qd.story:SetJustifyV("TOP")
+  self.qnote = UI.Text(self.qbody, 11, C.faint); self.qnote:SetWordWrap(true)
+  self.qnote:SetText("Quest text and rewards: Blizzard Entertainment. Quest givers, locations, levels and objectives: QuestieDB (GPLv3) for classic dungeons; for the new dungeons, Foxden learns where quests start and end as the guild picks them up and turns them in.")
+
+  -- Runs
+  self.runPanel = panel(f)
+  self.runList = UI.List(self.runPanel, 48, function(r)
+    r.name = UI.Text(r, 13); r.name:SetPoint("TOPLEFT", 14, -8)
+    r.sub = UI.Text(r, 11, C.dim); r.sub:SetPoint("TOPLEFT", r.name, "BOTTOMLEFT", 0, -5)
+    r.time = UI.Text(r, 13, C.text, "RIGHT"); r.time:SetPoint("TOPRIGHT", -14, -8)
+    r.meta = UI.Text(r, 11, C.dim, "RIGHT"); r.meta:SetPoint("TOPRIGHT", r.time, "BOTTOMRIGHT", 0, -5)
+    r:SetScript("OnClick", function(row) ns.OpenPage("runs", row.id) end)
+  end, function(r, run)
+    r.id = run.id
+    r.name:SetText(run.endTime and date("%b %d, %H:%M", run.endTime) or "Run")
+    local names = {}
+    for _, m in ipairs(run.party or {}) do names[#names + 1] = m.name end
+    r.sub:SetText(#names > 0 and table.concat(names, ", ") or (run.loggedBy and ("Logged by " .. run.loggedBy) or ""))
+    r.time:SetText(UI.Time(run.duration or 0))
+    local b, w = run.bosses and #run.bosses or 0, run.wipes or 0
+    r.meta:SetText(b .. (b == 1 and " boss" or " bosses") .. (w > 0 and (", " .. w .. (w == 1 and " wipe" or " wipes")) or ""))
+  end)
+  self.runEmpty = UI.Text(self.runPanel, 12, C.dim); self.runEmpty:SetWordWrap(true)
+  self.runEmpty:SetText("No runs of this dungeon logged yet. Walk in and Foxden records it on its own.")
+
+  self.empty = UI.Text(f, 13, C.dim, "CENTER"); self.empty:SetWordWrap(true)
+  self.empty:SetText("No dungeons yet. Run a dungeon and it appears here.")
+end
+
+function page:Layout(w, h)
+  self.w, self.h = w, h
+  local top = -(PICK_H + 10)
+  self.head:ClearAllPoints(); self.head:SetPoint("TOPLEFT", 0, top); self.head:SetPoint("TOPRIGHT", 0, top); self.head:SetHeight(HEAD_H)
+  local tx = -14
+  for i = #self.viewTabs, 1, -1 do
+    local b = self.viewTabs[i]
+    b:ClearAllPoints(); b:SetPoint("TOPRIGHT", tx, -12)
+    tx = tx - b:GetWidth() - 6
+  end
+  local tabsW = -tx
+  self.title:SetWidth(math.max(160, w - tabsW - 40))
+  self.sub:SetWidth(w - 200); self.lfgWho:SetWidth(w - 200)
+
+  local cy = top - HEAD_H - GAP
+  local ch = h + cy
+  local leftW = math.max(250, math.min(340, math.floor(w * 0.38)))
+  local rightW = w - leftW - GAP
+  self.leftW, self.rightW, self.contentH = leftW, rightW, ch
+  for _, p in ipairs({ self.bossPanel, self.qPanel }) do
+    p:ClearAllPoints(); p:SetPoint("TOPLEFT", 0, cy); p:SetSize(leftW, ch)
+  end
+  for _, p in ipairs({ self.detailPanel, self.qdPanel }) do
+    p:ClearAllPoints(); p:SetPoint("TOPLEFT", leftW + GAP, cy); p:SetSize(rightW, ch)
+  end
+  for _, p in ipairs({ self.mapPanel, self.runPanel, self.trashPanel }) do
+    p:ClearAllPoints(); p:SetPoint("TOPLEFT", 0, cy); p:SetSize(w, ch)
+  end
+  self.bosses:ClearAllPoints(); self.bosses:SetPoint("TOPLEFT", 4, -38); self.bosses:SetSize(leftW - 8, ch - 44)
+  self.scroll:ClearAllPoints(); self.scroll:SetPoint("TOPLEFT", 16, -16); self.scroll:SetSize(rightW - 32, ch - 28)
+  self.detail:SetWidth(rightW - 40)
+  self.qlistScroll:ClearAllPoints(); self.qlistScroll:SetPoint("TOPLEFT", 10, -54); self.qlistScroll:SetSize(leftW - 20, ch - 62)
+  self.qcards:SetWidth(leftW - 20)
+  self.qempty:ClearAllPoints(); self.qempty:SetPoint("TOPLEFT", 14, -60); self.qempty:SetWidth(leftW - 28)
+  self.qscroll:ClearAllPoints(); self.qscroll:SetPoint("TOPLEFT", 16, -16); self.qscroll:SetSize(rightW - 32, ch - 28)
+  self.qbody:SetWidth(rightW - 40)
+  self.runList:ClearAllPoints(); self.runList:SetPoint("TOPLEFT", 4, -6); self.runList:SetSize(w - 8, ch - 12)
+  self.runEmpty:ClearAllPoints(); self.runEmpty:SetPoint("TOPLEFT", 16, -16); self.runEmpty:SetWidth(w - 32)
+  -- map: as big as fits at 3:2, under the floor buttons
+  local mw, mh = w - 32, ch - 16 - 34 - 30
+  if mw / 1.5 > mh then mw = math.floor(mh * 1.5) else mh = math.floor(mw / 1.5) end
+  self.mapW, self.mapH = mw, mh
+  self.mapX = math.floor((w - mw) / 2)
+  self.map:ClearAllPoints(); self.map:SetPoint("TOPLEFT", self.mapX, -16 - 34)
+  self.mapNote:ClearAllPoints(); self.mapNote:SetPoint("TOPLEFT", self.mapX, -16 - 34 - mh - 8); self.mapNote:SetWidth(mw)
+  self.empty:ClearAllPoints(); self.empty:SetPoint("CENTER"); self.empty:SetWidth(w - 40)
+end
+
+-- ---- refresh: bosses ----------------------------------------------------------------
 
 function page:SetPortrait(look, npc)
   local m, box = self.portrait, self.portraitBox
@@ -427,230 +797,489 @@ function page:SetPortrait(look, npc)
     if m.ClearModel then pcall(m.ClearModel, m) end
     if look and m.SetDisplayInfo then ok = pcall(m.SetDisplayInfo, m, look) end
     if not ok and npc and m.SetCreature then ok = pcall(m.SetCreature, m, npc) end
-    if ok and m.SetPortraitZoom then pcall(m.SetPortraitZoom, m, 0.8) end
+    if ok and m.SetPortraitZoom then pcall(m.SetPortraitZoom, m, 0.75) end
     self.portraitOk = ok
   end
   box:SetShown(self.portraitOk == true)
   return self.portraitOk == true
 end
 
-function page:LayoutLoot(loot, note)
+function page:ShowBoss(e, boss)
   local w = self.detail:GetWidth() or 300
-  local y = -((self.headH or 20) + 8 + (self.body:GetStringHeight() or 0) + 14)
-  local shown = #loot > 0 or (note and note ~= "")
-  self.lootHead:SetShown(#loot > 0 or (note or ""):find("Nothing recorded") ~= nil)
-  local h = 0
-  if self.lootHead:IsShown() then
-    self.lootHead:ClearAllPoints(); self.lootHead:SetPoint("TOPLEFT", 0, y); y = y - 20; h = h + 20
-  end
+  local hasPortrait = false
+  local big = self.big
+  big:Hide()
+  if boss then
+    local look, npc = visual(e, boss.name)
+    -- round portrait when its look is known; else the game's 3D model in a square
+    local ok = look and SetPortraitTextureFromCreatureDisplayID and pcall(SetPortraitTextureFromCreatureDisplayID, big.por, look)
+    if ok then
+      self:SetPortrait(nil, nil)
+      big.level:SetText(boss.level or "??"); big:Show(); hasPortrait = true
+    else
+      hasPortrait = self:SetPortrait(look, npc)
+    end
+  else self:SetPortrait(nil, nil) end
+  local tx = hasPortrait and 112 or 0
+  self.bossTitle:ClearAllPoints(); self.bossTitle:SetPoint("TOPLEFT", tx, hasPortrait and -28 or 0); self.bossTitle:SetWidth(w - tx)
+  self.bossSub:ClearAllPoints(); self.bossSub:SetPoint("TOPLEFT", self.bossTitle, "BOTTOMLEFT", 0, -6); self.bossSub:SetWidth(w - tx)
+  self.bossTitle:SetText(boss and boss.name or "No bosses known for this dungeon yet")
+  local nb = #bossesOf(e)
+  self.bossSub:SetText(boss and (string.format("Boss %d of %d", boss.n, nb) .. (boss.level and ("  ·  level " .. boss.level) or "")
+    .. (boss.rare and "  ·  rare spawn" or "") .. "  ·  " .. recordText(e, boss.name)) or "")
+  local y = hasPortrait and -(96 + 16) or -(24 + 6 + 14 + 16)
+
+  local loot, note = {}, nil
+  if boss then loot, note = lootOf(e, boss) end
+  self.lootHead:SetShown(boss ~= nil)
+  if boss then self.lootHead:ClearAllPoints(); self.lootHead:SetPoint("TOPLEFT", 0, y); y = y - 24 end
   waitingItems = false
+  -- this boss's own loot first; loot shared by many bosses behind a toggle
+  local shared, own, common = sharedOf(e), {}, {}
+  local hiddenByFilter = 0
+  if ns.LootFilter and ns.LootFilter.Active() then
+    local kept = {}
+    for _, it in ipairs(loot) do if ns.LootFilter.Pass(it.id) then kept[#kept + 1] = it else hiddenByFilter = hiddenByFilter + 1 end end
+    loot = kept
+  end
+  for _, it in ipairs(loot) do
+    if shared[it.id] and not (it.seen and it.seen > 0) then common[#common + 1] = it else own[#own + 1] = it end
+  end
+  if #own == 0 then own, common = common, {} end
+  local showList = {}
+  for _, it in ipairs(own) do showList[#showList + 1] = it end
+  local function placeShared()
+    self.sharedBtn:SetShown(#common > 0); self.sharedNote:SetShown(#common > 0)
+    if #common == 0 then return end
+    self.sharedBtn.label:SetText((showShared and "Hide" or "Show") .. " shared loot (" .. #common .. ")")
+    self.sharedBtn:SetWidth(self.sharedBtn.label:GetStringWidth() + 24)
+    self.sharedBtn:ClearAllPoints(); self.sharedBtn:SetPoint("TOPLEFT", 0, y - 4)
+    self.sharedNote:ClearAllPoints(); self.sharedNote:SetPoint("LEFT", self.sharedBtn, "RIGHT", 10, 0)
+    self.sharedNote:SetText("drops from many bosses, low chance")
+    y = y - 36
+  end
+  local loot = showList
   for i, it in ipairs(loot) do
-    local r = self.lootRows[i] or lootRow(self.detail); self.lootRows[i] = r
-    local name, link, quality, icon = itemLook(it.id, it.name)
-    r.id, r.link = it.id, link
-    r.icon:SetTexture(icon)
-    r.name:SetText(name)
-    local qr, qg, qb = 1, 1, 1
-    if quality and C_Item and C_Item.GetItemQualityColor then qr, qg, qb = C_Item.GetItemQualityColor(quality)
-    elseif quality and GetItemQualityColor then qr, qg, qb = GetItemQualityColor(quality) end
-    r.name:SetTextColor(qr or 1, qg or 1, qb or 1)
+    local r = self.lootRows[i] or itemCard(self.detail); self.lootRows[i] = r
+    fillCard(r, it.id, it.name)
     local kind, others = ns.WishKind and ns.WishKind(it.id), ns.WantedBy and ns.WantedBy(it.id)
-    local wished = kind ~= nil
     local bits = {}
     if kind then bits[#bits + 1] = ns.WISH_COLOR[kind] .. ns.WISH_LABEL[kind] .. "|r" end
     if others then bits[#bits + 1] = "wanted by " .. others end
     if it.seen and it.seen > 0 then bits[#bits + 1] = "seen " .. it.seen .. "x" end
     r.seen:SetText(table.concat(bits, "  ·  "))
-    r.wish = { boss = selBoss, dungeon = selDungeon }
-    r.star:Show()
-    r.star.tex:SetDesaturated(not wished); r.star.tex:SetAlpha(wished and 1 or 0.35)
+    r.wish = { boss = boss.name, dungeon = e.name }
+    r.star:Show(); r.star.tex:SetDesaturated(not kind); r.star.tex:SetAlpha(kind and 1 or 0.35)
     r:ClearAllPoints(); r:SetPoint("TOPLEFT", 0, y); r:SetWidth(w); r:Show()
-    y = y - 26; h = h + 26
+    y = y - 52
   end
-  for i = #loot + 1, #self.lootRows do self.lootRows[i]:Hide() end
-  self.lootNote:SetShown(shown and note ~= nil and note ~= "")
+  local nrows = #loot
+  placeShared()
+  if showShared then
+    for _, it in ipairs(common) do
+      nrows = nrows + 1
+      local r = self.lootRows[nrows] or itemCard(self.detail); self.lootRows[nrows] = r
+      fillCard(r, it.id, it.name)
+      local kind = ns.WishKind and ns.WishKind(it.id)
+      r.seen:SetText(kind and (ns.WISH_COLOR[kind] .. ns.WISH_LABEL[kind] .. "|r") or "")
+      r.wish = { boss = boss.name, dungeon = e.name }
+      r.star:Show(); r.star.tex:SetDesaturated(not kind); r.star.tex:SetAlpha(kind and 1 or 0.35)
+      r:ClearAllPoints(); r:SetPoint("TOPLEFT", 0, y); r:SetWidth(w); r:Show()
+      y = y - 52
+    end
+  end
+  for i = nrows + 1, #self.lootRows do self.lootRows[i]:Hide() end
+  if boss and nrows == 0 and #common == 0 then y = y + 4 end
+
+  self.body:SetShown(boss ~= nil)
+  if boss then
+    self.body:SetWidth(w); self.body:SetText(bossText(e, boss))
+    self.body:ClearAllPoints(); self.body:SetPoint("TOPLEFT", 0, y - 10)
+    y = y - 10 - (self.body:GetStringHeight() or 0)
+  end
+  self.lootNote:SetShown(note ~= nil and note ~= "")
   if self.lootNote:IsShown() then
     self.lootNote:SetWidth(w); self.lootNote:SetText(note)
-    self.lootNote:ClearAllPoints(); self.lootNote:SetPoint("TOPLEFT", 0, y - 6)
-    h = h + 10 + (self.lootNote:GetStringHeight() or 14)
+    self.lootNote:ClearAllPoints(); self.lootNote:SetPoint("TOPLEFT", 0, y - 16)
+    y = y - 16 - (self.lootNote:GetStringHeight() or 14)
   end
-  local key = tostring(selDungeon) .. "/" .. tostring(selBoss)
-  if self.itemKey ~= key then self.itemKey, self.itemTries = key, 0 end
+  self.detail:SetHeight(-y + 16)
+
+  local key = tostring(e.name) .. "/" .. tostring(boss and boss.name)
+  if self.itemKey ~= key then self.itemKey, self.itemTries = key, 0; self.scroll:SetVerticalScroll(0) end
   if waitingItems and not self.itemWait and self.itemTries < 5 then
-    self.itemTries = self.itemTries + 1
     -- item data arrives a moment later; redraw once it has
+    self.itemTries = self.itemTries + 1
     self.itemWait = true
     C_Timer.After(0.6, function() self.itemWait = nil; if self.scroll:IsVisible() then ns.RefreshUI() end end)
   end
-  return h + 14
 end
 
--- ---- quests (from the website: Blizzard's quest text and rewards, QuestieDB givers) -----
--- row: { id, title, faction, level, minLevel, giver, area, map, x, y, ender, objective, after, xp, money, rep, items, choice, text }
-local function questsOf(e)
-  local site = ns.Site()
-  local rows = site and type(site.quests) == "table" and site.quests[ns.Slug(e.name)] or {}
-  local mine = UnitFactionGroup and UnitFactionGroup("player")
-  local f = mine == "Alliance" and "A" or mine == "Horde" and "H" or nil
-  local out = {}
-  for _, q in ipairs(rows) do
-    if type(q) == "table" and (questsAll or q[3] == "" or not f or q[3] == f) then out[#out + 1] = q end
+-- ---- refresh: quests ----------------------------------------------------------------
+
+function page:ShowQuest(q)
+  local qd, w = self.qd, self.qbody:GetWidth() or 400
+  local ar, ag, ab = UI.Accent()
+  local head = hex(ar, ag, ab)
+  qd.title:SetWidth(w - 60); qd.title:SetText(q[2])
+  local st = ns.QuestState and ns.QuestState(q[1])
+  qd.meta:ClearAllPoints(); qd.meta:SetPoint("TOPLEFT", qd.title, "BOTTOMLEFT", 0, -8)
+  qd.meta:SetText((questLevel(q) ~= "" and (questLevel(q) .. "  ·  ") or "") .. (FACTION[q[3] or ""] or FACTION[""]))
+  if q[3] == "B" then crest(qd.c1, "A"); crest(qd.c2, "H"); qd.c1:Show(); qd.c2:Show()
+  elseif q[3] == "A" or q[3] == "H" then crest(qd.c2, q[3]); qd.c1:Hide(); qd.c2:Show()
+  else qd.c1:Hide(); qd.c2:Hide() end
+  qd.c2:ClearAllPoints(); qd.c2:SetPoint("TOPRIGHT", 0, 0)
+  qd.c1:ClearAllPoints(); qd.c1:SetPoint("RIGHT", qd.c2, "LEFT", -4, 0)
+  qd.status:ClearAllPoints(); qd.status:SetPoint("TOPLEFT", qd.meta, "BOTTOMLEFT", 0, -6)
+  qd.status:SetText(st == "done" and "|cff6fd39aYou've done this quest|r" or st == "have" and "|cffe8c35aIn your quest log|r"
+    or q.locked and ("|cffef6b6b" .. q.locked .. "|r") or "")
+  local y = (qd.title:GetStringHeight() or 20) + 8 + 14 + ((st or q.locked) and (6 + 14) or 0) + 12
+  qd.line:ClearAllPoints(); qd.line:SetPoint("TOPLEFT", 0, -y); qd.line:SetPoint("TOPRIGHT", 0, -y)
+  y = y + 14
+
+  local lines = {}
+  local function sec(label, text) lines[#lines + 1] = (#lines > 0 and "\n" or "") .. head .. label .. "|r\n" .. text end
+  if q[12] ~= "" then sec("Objective", q[12]) end
+  if q[6] ~= "" then
+    sec("Starts at", q[6] .. (q[7] ~= "" and (" in " .. q[7]) or "") .. ((q[9] or 0) > 0 and string.format(" (%d, %d)", math.floor(q[9] + 0.5), math.floor(q[10] + 0.5)) or ""))
   end
-  return out, #rows
+  local sameEnd = (q[20] or 0) == 0 or (q[20] == q[8] and math.abs((q[21] or 0) - (q[9] or 0)) <= 1 and math.abs((q[22] or 0) - (q[10] or 0)) <= 1)
+  if q[11] ~= "" or not sameEnd then
+    local who = q[11] ~= "" and q[11] or q[6]
+    sec("Turn in to", who .. ((not sameEnd) and string.format(" (%d, %d)", math.floor(q[21] + 0.5), math.floor(q[22] + 0.5)) or ""))
+  end
+  local chain, k, cur = chainOf(q)
+  if not chain and q[13] ~= "" then sec("Needs first", q[13]) end
+  qd.text:SetWidth(w); qd.text:SetText(table.concat(lines, "\n"))
+  qd.text:ClearAllPoints(); qd.text:SetPoint("TOPLEFT", 0, -y)
+  y = y + (qd.text:GetStringHeight() or 0) + 12
+
+  -- where you are in its quest chain
+  qd.chainLine:SetShown(chain ~= nil)
+  if chain then
+    local n, txt = #chain, nil
+    if st == "done" then txt = "|cff99a1b0Step " .. k .. " of " .. n .. " in a quest chain.|r"
+    elseif cur and cur < k then txt = "|cffef6b6bNeeds the quests before it first: you're on step " .. cur .. " of " .. n .. ", this is step " .. k .. ".|r"
+    elseif st == "have" then txt = "|cffe8c35aStep " .. k .. " of " .. n .. " in a quest chain, in your quest log.|r"
+    elseif k == 1 then txt = "|cff6fd39aStep 1 of " .. n .. ": this quest starts the chain.|r"
+    else txt = "|cff6fd39aStep " .. k .. " of " .. n .. ": you've done the quests before it.|r" end
+    qd.chainLine:SetWidth(w); qd.chainLine:SetText(txt)
+    qd.chainLine:ClearAllPoints(); qd.chainLine:SetPoint("TOPLEFT", 0, -y)
+    y = y + (qd.chainLine:GetStringHeight() or 14) + 10
+  end
+
+  -- buttons, wrapping onto a second row when they don't fit
+  qd.pinEnd.q = q
+  -- "Show on map": the quest giver, or the giver of the chain step you're on when that comes first
+  local nextStep = chain and cur and cur < k and chain[cur] or nil
+  if nextStep and (nextStep[4] or 0) > 0 then
+    qd.pin.target = { nextStep[4], nextStep[5], nextStep[6], (nextStep[3] ~= "" and nextStep[3] or nextStep[2]) .. " (step " .. cur .. ")" }
+    qd.pin.label:SetText("Show step " .. cur .. " on map")
+  else
+    qd.pin.target = (q[8] or 0) > 0 and { q[8], q[9], q[10], q[6] ~= "" and q[6] or "the quest start" } or nil
+    qd.pin.label:SetText("Show on map")
+  end
+  local hasStart, hasEnd = qd.pin.target ~= nil, (q[20] or 0) > 0
+  qd.chainBtn.label:SetText(showChain and "Hide quest chain" or "Show quest chain")
+  qd.linkBtn.label:SetText(showLink and "Hide the link" or "Guides online")
+  local btns = {}
+  if chain then btns[#btns + 1] = qd.chainBtn end
+  if hasStart then btns[#btns + 1] = qd.pin end
+  if hasEnd then btns[#btns + 1] = qd.pinEnd end
+  btns[#btns + 1] = qd.linkBtn
+  qd.chainBtn:SetShown(chain ~= nil); qd.pin:SetShown(hasStart); qd.pinEnd:SetShown(hasEnd)
+  local bx, rowY = 0, y
+  for _, b in ipairs(btns) do
+    local bw = math.floor((b.label:GetStringWidth() or 60) + 24)
+    b:SetWidth(bw)
+    if bx > 0 and bx + bw > w then bx = 0; rowY = rowY + 30 end
+    b:ClearAllPoints(); b:SetPoint("TOPLEFT", bx, -rowY); b:Show()
+    bx = bx + bw + 8
+  end
+  y = rowY + 34
+
+  -- the whole chain
+  qd.chainBox:SetShown(chain ~= nil and showChain)
+  if chain and showChain then
+    qd.chainText:SetWidth(w - 24); qd.chainText:SetText(chainLines(chain, k))
+    local hh = (qd.chainText:GetStringHeight() or 0) + 20
+    qd.chainBox:ClearAllPoints(); qd.chainBox:SetPoint("TOPLEFT", 0, -y); qd.chainBox:SetSize(w, hh)
+    y = y + hh + 10
+  end
+  -- the link to read more online (the game can't open web pages)
+  qd.link:SetShown(showLink); qd.linkHint:SetShown(showLink)
+  if showLink then
+    qd.link:SetWidth(w); qd.link:SetLink(ns.QuestUrl(q))
+    qd.link:ClearAllPoints(); qd.link:SetPoint("TOPLEFT", 0, -y); y = y + 30
+    qd.linkHint:SetWidth(w); qd.linkHint:ClearAllPoints(); qd.linkHint:SetPoint("TOPLEFT", 0, -y)
+    y = y + (qd.linkHint:GetStringHeight() or 14) + 12
+  end
+
+  -- the guild's note
+  local note, by = questNote(q)
+  qd.noteHead:ClearAllPoints(); qd.noteHead:SetPoint("TOPLEFT", 0, -y); y = y + 20
+  qd.note:SetWidth(w)
+  qd.note:SetText(note and (note .. ((by and by ~= "") and ("  |cff99a1b0(" .. by .. ")|r") or ""))
+    or "|cff99a1b0No note yet. Guild members write them on the website's dungeon page; they show here after the next sync.|r")
+  qd.note:ClearAllPoints(); qd.note:SetPoint("TOPLEFT", 0, -y)
+  y = y + (qd.note:GetStringHeight() or 14) + 16
+
+  -- rewards: "choose one" cards in two columns, then what you get anyway
+  waitingItems = false
+  local n = 0
+  local function cards(ids, x0, colW, cols)
+    local rowsUsed = 0
+    for i, id in ipairs(ids) do
+      n = n + 1
+      local r = qd.rows[n] or itemCard(self.qbody, 44); qd.rows[n] = r
+      fillCard(r, id)
+      local col, row = (i - 1) % cols, math.floor((i - 1) / cols)
+      r:ClearAllPoints(); r:SetPoint("TOPLEFT", x0 + col * (colW + 8), -(y + row * 50)); r:SetWidth(colW); r:Show()
+      rowsUsed = row + 1
+    end
+    y = y + rowsUsed * 50
+  end
+  local cols = w >= 420 and 2 or 1
+  local colW = cols == 2 and math.floor((w - 8) / 2) or w
+  local choice = q[18] or {}
+  qd.chooseHead:SetShown(#choice > 0)
+  if #choice > 0 then
+    qd.chooseHead:SetText(#choice == 1 and "You receive" or "Choose one reward")
+    qd.chooseHead:ClearAllPoints(); qd.chooseHead:SetPoint("TOPLEFT", 0, -y); y = y + 22
+    cards(choice, 0, colW, cols)
+    y = y + 6
+  end
+  local items = q[17] or {}
+  local extra = {}
+  if (q[14] or 0) > 0 then extra[#extra + 1] = UI.Num(q[14]) .. " XP" end
+  if (q[15] or 0) > 0 then extra[#extra + 1] = ns.Money(q[15]) end
+  if q[16] ~= "" then extra[#extra + 1] = q[16] .. " reputation" end
+  local hasAlso = #items > 0 or #extra > 0
+  qd.alsoHead:SetShown(hasAlso)
+  if hasAlso then
+    qd.alsoHead:SetText(#choice > 0 and "You will also receive" or "Rewards")
+    qd.alsoHead:ClearAllPoints(); qd.alsoHead:SetPoint("TOPLEFT", 0, -y); y = y + 22
+    cards(items, 0, colW, cols)
+  end
+  for k = n + 1, #qd.rows do qd.rows[k]:Hide() end
+  qd.money:SetShown(#extra > 0)
+  if #extra > 0 then
+    qd.money:SetWidth(w); qd.money:SetText(table.concat(extra, "   ·   "))
+    qd.money:ClearAllPoints(); qd.money:SetPoint("TOPLEFT", 0, -(y + 2)); y = y + 24
+  end
+  qd.story:SetWidth(w); qd.story:SetText(q[19] or "")
+  qd.story:SetShown((q[19] or "") ~= "")
+  if qd.story:IsShown() then
+    qd.story:ClearAllPoints(); qd.story:SetPoint("TOPLEFT", 0, -(y + 10)); y = y + 10 + (qd.story:GetStringHeight() or 0)
+  end
+  self.qnote:ClearAllPoints(); self.qnote:SetPoint("TOPLEFT", 0, -(y + 18)); self.qnote:SetWidth(w)
+  y = y + 18 + (self.qnote:GetStringHeight() or 14)
+  self.qbody:SetHeight(y + 16)
+
+  local key = "q/" .. tostring(q[1])
+  if self.qkey ~= key then self.qkey, self.qtries = key, 0; self.qscroll:SetVerticalScroll(0) end
+  if waitingItems and not self.qwait and self.qtries < 5 then
+    self.qtries = self.qtries + 1
+    self.qwait = true
+    C_Timer.After(0.6, function() self.qwait = nil; if self.qscroll:IsVisible() then ns.RefreshUI() end end)
+  end
 end
 
-local FACTION = {
-  A = "|cff4a8cffAlliance|r",
-  H = "|cffe5483cHorde|r",
-  [""] = "|cff99a1b0Both factions|r",
-}
-
-local function pinOnMap(map, x, y, name)
-  if not (map and map > 0 and C_Map and C_Map.SetUserWaypoint and UiMapPoint) then return false end
-  if C_Map.CanSetUserWaypointOnMap and not C_Map.CanSetUserWaypointOnMap(map) then return false end
-  local ok = pcall(function()
-    C_Map.SetUserWaypoint(UiMapPoint.CreateFromCoordinates(map, x / 100, y / 100))
-    if C_SuperTrack and C_SuperTrack.SetSuperTrackedUserWaypoint then C_SuperTrack.SetSuperTrackedUserWaypoint(true) end
-  end)
-  if ok then ns.say(string.format("Map pin set on %s (%d, %d).", name, math.floor(x + 0.5), math.floor(y + 0.5))) end
-  return ok
-end
-
-local function questBlock(parent)
-  local b = CreateFrame("Frame", nil, parent)
-  b.title = UI.Text(b, 14); b.title:SetPoint("TOPLEFT")
-  b.meta = UI.Text(b, 11, C.dim, "RIGHT"); b.meta:SetPoint("TOPRIGHT")
-  b.text = UI.Text(b, 12, C.text); b.text:SetWordWrap(true); b.text:SetJustifyV("TOP")
-  b.pin = UI.Button(b, "Pin start", 96, 22, function(btn) local q = btn.q; if q then pinOnMap(q[8], q[9], q[10], q[6] ~= "" and q[6] or "the quest start") end end)
-  b.pinEnd = UI.Button(b, "Pin turn-in", 104, 22, function(btn) local q = btn.q; if q then pinOnMap(q[20], q[21], q[22], q[11] ~= "" and q[11] or q[6] ~= "" and q[6] or "the turn-in") end end)
-  b.pinEnd:SetPoint("LEFT", b.pin, "RIGHT", 8, 0)
-  b.rows = {}
-  b.story = UI.Text(b, 11, C.dim); b.story:SetWordWrap(true); b.story:SetJustifyV("TOP")
-  b.line = b:CreateTexture(nil, "BORDER"); b.line:SetColorTexture(unpack(C.line)); b.line:SetHeight(1)
-  return b
+-- One quest card: icon, title, level and status, faction crests; the picked card opens to show
+-- the quest's chain with your progress.
+local function questCard(parent)
+  local c = CreateFrame("Button", nil, parent)
+  UI.Fill(c, C.raised); UI.Border(c)
+  c.tint = c:CreateTexture(nil, "BACKGROUND", nil, 1); c.tint:SetAllPoints(); UI.Accented(c.tint, 0.12); c.tint:Hide()
+  c.bar = c:CreateTexture(nil, "ARTWORK"); c.bar:SetPoint("TOPLEFT"); c.bar:SetPoint("BOTTOMLEFT"); c.bar:SetWidth(2); UI.Accented(c.bar); c.bar:Hide()
+  UI.Fill(c, C.hover, "HIGHLIGHT")
+  c.qicon = c:CreateTexture(nil, "ARTWORK"); c.qicon:SetSize(20, 20); c.qicon:SetPoint("TOPLEFT", 12, -12)
+  c.c2 = c:CreateTexture(nil, "ARTWORK"); c.c2:SetSize(20, 20); c.c2:SetPoint("TOPRIGHT", -10, -10)
+  c.c1 = c:CreateTexture(nil, "ARTWORK"); c.c1:SetSize(20, 20); c.c1:SetPoint("RIGHT", c.c2, "LEFT", -4, 0)
+  c.title = UI.Text(c, 13); c.title:SetWordWrap(true); c.title:SetJustifyV("TOP"); c.title:SetPoint("TOPLEFT", 42, -12)
+  c.sub = UI.Text(c, 11, C.dim); c.sub:SetPoint("TOPLEFT", c.title, "BOTTOMLEFT", 0, -5)
+  c.inset = CreateFrame("Frame", nil, c); UI.Fill(c.inset, C.bg); UI.Border(c.inset)
+  c.steps = UI.Text(c.inset, 12); c.steps:SetWordWrap(true); c.steps:SetJustifyV("TOP"); c.steps:SetSpacing(4)
+  c.steps:SetPoint("TOPLEFT", 10, -8)
+  c:SetScript("OnClick", function(self) selQuest = self.qid; showLink = false; ns.RefreshUI() end)
+  return c
 end
 
 function page:LayoutQuests(e)
   local quests, totalQuests = questsOf(e)
-  local w = (self.qbody:GetWidth() or 400)
-  local mine = UnitFactionGroup and UnitFactionGroup("player") or "your faction"
-  self.qfilter.label:SetText(questsAll and ("Show " .. mine .. " only") or "Show both factions")
-  self.qfilter:SetWidth(self.qfilter.label:GetStringWidth() + 24)
-  self.qfilterNote:SetText(questsAll and string.format("All %d quests", totalQuests) or string.format("%s and both-faction quests (%d of %d)", mine, #quests, totalQuests))
-  self.qfilter:SetShown(totalQuests > 0); self.qfilterNote:SetShown(totalQuests > 0)
-  local ar, ag, ab = UI.Accent()
-  local head, dim = hex(ar, ag, ab), hex(C.dim[1], C.dim[2], C.dim[3])
-  local y = totalQuests > 0 and 36 or 0
-  waitingItems = false
-  for i, q in ipairs(quests) do
-    local b = self.qblocks[i] or questBlock(self.qbody); self.qblocks[i] = b
-    b:ClearAllPoints(); b:SetPoint("TOPLEFT", 0, -y); b:SetWidth(w); b:Show()
-    b.title:SetText(q[2]); b.title:SetWidth(w - 130)
-    local lvl = (q[4] or 0) > 0 and ("Level " .. q[4] .. (((q[5] or 0) > 0 and q[5] ~= q[4]) and (" (from " .. q[5] .. ")") or "")) or ""
-    local st = ns.QuestState and ns.QuestState(q[1])
-    local status = st == "done" and "|cff6fd39aDone|r   " or st == "have" and "|cffe8c35aIn your quest log|r   " or ""
-    b.meta:SetText(status .. lvl .. (lvl ~= "" and "   " or "") .. (FACTION[q[3] or ""] or FACTION[""]))
-    b.title:SetTextColor(unpack(st == "done" and C.faint or C.text))
-    local lines = {}
-    if q[6] ~= "" then
-      local where = q[6] .. (q[7] ~= "" and (dim .. " in " .. q[7]) or "") .. ((q[9] or 0) > 0 and string.format(" (%d, %d)", math.floor(q[9] + 0.5), math.floor(q[10] + 0.5)) or "") .. (q[7] ~= "" and "|r" or "")
-      lines[#lines + 1] = head .. "Get it from|r  " .. where .. ((q[11] ~= "" and (q[20] or 0) == 0) and (dim .. "; turn in to |r" .. q[11]) or "")
-    end
-    if (q[20] or 0) > 0 and (q[20] ~= q[8] or math.abs((q[21] or 0) - (q[9] or 0)) > 1 or math.abs((q[22] or 0) - (q[10] or 0)) > 1) then
-      lines[#lines + 1] = head .. "Turn in to|r  " .. (q[11] ~= "" and q[11] or q[6]) .. dim .. string.format(" (%d, %d)", math.floor(q[21] + 0.5), math.floor(q[22] + 0.5)) .. "|r"
-    end
-    if q[12] ~= "" then lines[#lines + 1] = head .. "Objective|r  " .. q[12] end
-    if q[13] ~= "" then lines[#lines + 1] = head .. "Needs first|r  " .. q[13] end
-    local rew = {}
-    if (q[14] or 0) > 0 then rew[#rew + 1] = UI.Num(q[14]) .. " XP" end
-    if (q[15] or 0) > 0 then rew[#rew + 1] = ns.Money(q[15]) end
-    if q[16] ~= "" then rew[#rew + 1] = q[16] .. " reputation" end
-    if #rew > 0 then lines[#lines + 1] = head .. "Rewards|r  " .. table.concat(rew, ", ") end
-    b.text:SetWidth(w); b.text:SetText(table.concat(lines, "\n"))
-    b.text:ClearAllPoints(); b.text:SetPoint("TOPLEFT", 0, -22)
-    local by = 22 + (b.text:GetStringHeight() or 0) + 6
-    -- reward items: the game's own item data
-    local items = {}
-    for _, id in ipairs(q[17] or {}) do items[#items + 1] = { id = id } end
-    local choice = q[18] or {}
-    if #choice > 0 then items[#items + 1] = { label = "Choose one:" } end
-    for _, id in ipairs(choice) do items[#items + 1] = { id = id } end
-    local n = 0
-    for _, it in ipairs(items) do
-      n = n + 1
-      local r = b.rows[n] or lootRow(b); b.rows[n] = r
-      if it.label then
-        r.id, r.link = nil, nil; r.icon:SetTexture(nil); r.name:SetText(dim .. it.label .. "|r"); r.name:SetTextColor(1, 1, 1); r.seen:SetText("")
-        r:EnableMouse(false)
-      else
-        r:EnableMouse(true)
-        local name, link, quality, icon = itemLook(it.id)
-        r.id, r.link = it.id, link
-        r.icon:SetTexture(icon); r.name:SetText(name); r.seen:SetText("")
-        local qr, qg, qb = 1, 1, 1
-        if quality and C_Item and C_Item.GetItemQualityColor then qr, qg, qb = C_Item.GetItemQualityColor(quality) end
-        r.name:SetTextColor(qr or 1, qg or 1, qb or 1)
-      end
-      r:ClearAllPoints(); r:SetPoint("TOPLEFT", 0, -by); r:SetWidth(w); r:Show()
-      by = by + 26
-    end
-    for k = n + 1, #b.rows do b.rows[k]:Hide() end
-    b.pin.q, b.pinEnd.q = q, q
-    local hasStart, hasEnd = (q[8] or 0) > 0, (q[20] or 0) > 0
-    b.pin:SetShown(hasStart); b.pinEnd:SetShown(hasEnd)
-    b.pin:ClearAllPoints(); b.pin:SetPoint("TOPLEFT", 0, -by - 2)
-    b.pinEnd:ClearAllPoints()
-    if hasStart then b.pinEnd:SetPoint("LEFT", b.pin, "RIGHT", 8, 0) else b.pinEnd:SetPoint("TOPLEFT", 0, -by - 2) end
-    if hasStart or hasEnd then by = by + 30 end
-    b.story:SetWidth(w); b.story:SetText(q[19] or "")
-    b.story:ClearAllPoints(); b.story:SetPoint("TOPLEFT", 0, -by - 2)
-    by = by + ((q[19] or "") ~= "" and ((b.story:GetStringHeight() or 0) + 8) or 0)
-    b.line:ClearAllPoints(); b.line:SetPoint("TOPLEFT", 0, -by - 8); b.line:SetPoint("TOPRIGHT", 0, -by - 8)
-    b:SetHeight(by + 10)
-    y = y + by + 22
+  local sf = factionShown()
+  self.qHead:SetText("Quests  |cff99a1b0" .. #quests .. "|r")
+  for fac, b in pairs(self.fbtn) do
+    b.on:SetShown(sf[fac] == true); b.icon:SetDesaturated(not sf[fac]); b.icon:SetAlpha(sf[fac] and 1 or 0.5)
+    b:SetShown(totalQuests > 0)
   end
-  for k = #quests + 1, #self.qblocks do self.qblocks[k]:Hide() end
+  local who = sf.A and sf.H and "Both factions" or sf.A and "Alliance" or "Horde"
+  self.qfilterNote:SetText(totalQuests == 0 and "" or (string.format("%s  ·  %d of %d", who, #quests, totalQuests)
+    .. (hiddenProf > 0 and string.format("  ·  %d profession %s hidden", hiddenProf, hiddenProf == 1 and "quest" or "quests") or "")))
+  -- keep the picked quest; else the first one you haven't done
+  local q
+  for _, x in ipairs(quests) do if x[1] == selQuest then q = x end end
+  if not q then
+    for _, x in ipairs(quests) do if not q and not (ns.QuestState and ns.QuestState(x[1]) == "done") then q = x end end
+    q = q or quests[1]
+    selQuest = q and q[1]
+  end
+
+  local cw = self.qcards:GetWidth() or 300
+  local y = 0
+  for i, x in ipairs(quests) do
+    local c = self.cards[i] or questCard(self.qcards); self.cards[i] = c
+    c.qid = x[1]
+    local st = ns.QuestState and ns.QuestState(x[1])
+    questIcon(c.qicon, st == "done" and "done" or st == "have" and "have" or "new")
+    if x[3] == "B" then crest(c.c1, "A"); crest(c.c2, "H"); c.c1:Show(); c.c2:Show()
+    elseif x[3] == "A" or x[3] == "H" then crest(c.c2, x[3]); c.c1:Hide(); c.c2:Show()
+    else c.c1:Hide(); c.c2:Hide() end
+    local on = x[1] == selQuest
+    c.tint:SetShown(on); c.bar:SetShown(on)
+    c.title:SetWidth(cw - 42 - 58); c.title:SetText(x[2])
+    if on then c.title:SetTextColor(UI.Accent()) else c.title:SetTextColor(unpack((st == "done" or x.locked) and C.dim or C.text)) end
+    local chain, k = chainOf(x)
+    local bits = {}
+    local lvl = (x[5] or 0) > 0 and x[5] or x[4]
+    if (lvl or 0) > 0 then bits[#bits + 1] = "From level " .. lvl end
+    if x.locked then bits[#bits + 1] = "|cffef6b6b" .. x.locked .. "|r" end
+    if chain then bits[#bits + 1] = "step " .. k .. " of " .. #chain end
+    if st == "done" then bits[#bits + 1] = "|cff6fd39aDone|r" elseif st == "have" then bits[#bits + 1] = "|cffe8c35aIn your log|r" end
+    c.sub:SetText(table.concat(bits, "  ·  "))
+    local h = 12 + math.max(16, c.title:GetStringHeight() or 16) + 5 + 12 + 12
+    c.inset:SetShown(on and chain ~= nil)
+    if on and chain then
+      c.steps:SetWidth(cw - 24 - 20); c.steps:SetText(chainLines(chain, k))
+      local ih = (c.steps:GetStringHeight() or 0) + 16
+      c.inset:ClearAllPoints(); c.inset:SetPoint("TOPLEFT", 12, -h); c.inset:SetPoint("RIGHT", c, "RIGHT", -12, 0); c.inset:SetHeight(ih)
+      h = h + ih + 12
+    end
+    c:ClearAllPoints(); c:SetPoint("TOPLEFT", 0, -y); c:SetSize(cw, h); c:Show()
+    y = y + h + 6
+  end
+  for i = #quests + 1, #self.cards do self.cards[i]:Hide() end
+  self.qcards:SetHeight(math.max(1, y))
+  local max = math.max(0, y - (self.qlistScroll:GetHeight() or 0))
+  if (self.qlistScroll:GetVerticalScroll() or 0) > max then self.qlistScroll:SetVerticalScroll(max) end
+
+  self.qlistScroll:SetShown(#quests > 0)
   self.qempty:SetShown(#quests == 0)
   self.qempty:SetText(ns.Site() and ns.Site().quests and "No quests listed for this dungeon." or "Quests come from your guild's website and load when you log in with the companion app running.")
-  self.qnote:ClearAllPoints(); self.qnote:SetPoint("TOPLEFT", 0, -y); self.qnote:SetWidth(w); self.qnote:SetShown(#quests > 0)
-  self.qbody:SetHeight(y + 60)
-  local key = "q/" .. tostring(selDungeon)
-  if self.itemKey ~= key then self.itemKey, self.itemTries = key, 0 end
-  if waitingItems and not self.itemWait and self.itemTries < 5 then
-    self.itemTries = self.itemTries + 1
-    self.itemWait = true
-    C_Timer.After(0.6, function() self.itemWait = nil; if self.qscroll:IsVisible() then ns.RefreshUI() end end)
-  end
+  self.qdPanel:SetShown(q ~= nil)
+  if q then self:ShowQuest(q) end
   return #quests
 end
+
+-- ---- refresh: trash -----------------------------------------------------------------
+
+function page:ShowTrash(e)
+  local w = (self.w or 800) - 32
+  self.trashScroll:ClearAllPoints(); self.trashScroll:SetPoint("TOPLEFT", 16, -52); self.trashScroll:SetSize(w, (self.contentH or 400) - 64)
+  self.trashBody:SetWidth(w)
+  self.trashNote:SetWidth(w)
+  local list = ns.Trash and ns.Trash.For(e.name)
+  local stateNow = ns.Trash and ns.Trash.State() or "missing"
+  for _, r in ipairs(self.trashRows) do r:Hide() end
+  if not list then
+    self.trashHead:SetText("Trash drops")
+    self.trashNote:SetText(stateNow == "missing" and "Trash drops come from the QuestieDB addon (it comes with Questie). Turn it on to see them."
+      or "Reading QuestieDB for every dungeon's trash drops... a couple of seconds, once per session.")
+    return
+  end
+  -- best first; the loot filter applies here too
+  local shown, hidden = {}, 0
+  for _, it in ipairs(list) do
+    if not ns.LootFilter or ns.LootFilter.Pass(it.id) then shown[#shown + 1] = it else hidden = hidden + 1 end
+  end
+  waitingItems = false
+  local q = {}
+  for _, it in ipairs(shown) do local _, _, quality = itemLook(it.id); q[it.id] = quality or 0 end
+  table.sort(shown, function(a, b) if q[a.id] ~= q[b.id] then return q[a.id] > q[b.id] end; return a.id < b.id end)
+  -- grey and white items are clutter
+  local kept = {}
+  for _, it in ipairs(shown) do if q[it.id] >= 2 or q[it.id] == 0 then kept[#kept + 1] = it end end
+  self.trashHead:SetText("Trash drops  |cff99a1b0" .. #kept .. "|r")
+  self.trashNote:SetText(#list == 0 and "QuestieDB lists no drops that only this dungeon's trash has."
+    or ((hidden > 0 and (hidden .. " hidden by the loot filter. ") or "") .. "Items that drop only from this dungeon's trash (not its bosses), from QuestieDB."))
+  local y = 0
+  for i, it in ipairs(kept) do
+    local r = self.trashRows[i] or itemCard(self.trashBody); self.trashRows[i] = r
+    fillCard(r, it.id)
+    local mobs = table.concat(it.mobs, ", ")
+    if #mobs > 60 then mobs = mobs:sub(1, 57) .. "..." end
+    r.seen:SetText(mobs)
+    r.seen:SetWidth(math.floor(w * 0.45))
+    local kind = ns.WishKind and ns.WishKind(it.id)
+    r.wish = { boss = "Trash", dungeon = e.name }
+    r.star:Show(); r.star.tex:SetDesaturated(not kind); r.star.tex:SetAlpha(kind and 1 or 0.35)
+    r:ClearAllPoints(); r:SetPoint("TOPLEFT", 0, -y); r:SetWidth(w); r:Show()
+    y = y + 52
+  end
+  self.trashBody:SetHeight(math.max(1, y))
+  local key = "trash/" .. tostring(e.name)
+  if self.trashKey ~= key then self.trashKey, self.trashTries = key, 0; self.trashScroll:SetVerticalScroll(0) end
+  if waitingItems and not self.trashWait and (self.trashTries or 0) < 5 then
+    self.trashTries = (self.trashTries or 0) + 1
+    self.trashWait = true
+    C_Timer.After(0.6, function() self.trashWait = nil; if self.trashScroll:IsVisible() then ns.RefreshUI() end end)
+  end
+end
+
+-- ---- refresh ------------------------------------------------------------------------
 
 function page:Refresh(arg)
   local list = dungeonList()
   if type(arg) == "table" and arg.dungeon then
-    -- a jump from search or Home: pick the dungeon (and boss or tab) and scroll to it
+    -- a jump from search or Home: pick the dungeon (and boss or tab)
     local want = ns.Slug(arg.dungeon)
-    for i, x in ipairs(list) do
+    for _, x in ipairs(list) do
       if ns.Slug(x.name) == want then
-        selDungeon, selBoss, selFloor = x.name, arg.boss, nil
+        selDungeon, selBoss, selFloor, selQuest = x.name, arg.boss, nil, arg.quest
+        showLink, showShared = false, false
         jview = arg.view or "bosses"
-        self.list.offset = math.max(0, i - 3)
       end
     end
   end
   local e
   for _, x in ipairs(list) do if x.name == selDungeon then e = x end end
   if not e then e = list[1]; selDungeon = e and e.name end
-  self.list:SetItems(list)
+  self.entry = e
+
+  local opts = {}
+  for _, x in ipairs(list) do
+    local lv = levelsOf(x)
+    opts[#opts + 1] = { value = x.name, label = x.name .. (lv and ("  |cff99a1b0" .. lv .. "|r") or "") }
+  end
+  self.picker:SetOptions(opts, selDungeon)
+  self.picker.value:SetText(selDungeon or "")
+
   local has = e ~= nil
-  for _, el in ipairs({ self.title, self.sub, self.map, self.mapNote, self.bosses, self.scroll, self.lfg, self.lfgWho }) do el:SetShown(has) end
+  for _, el in ipairs({ self.head, self.prev, self.picker, self.next }) do el:SetShown(has) end
   self.empty:SetShown(not has)
-  for _, t in ipairs(self.viewTabs) do t:SetShown(has) end
-  self.runList:SetShown(has and jview == "runs"); self.runEmpty:Hide()
-  self.qscroll:SetShown(has and jview == "quests")
-  for _, b in ipairs(self.floorButtons) do b:Hide() end
+  local panels = { map = { self.mapPanel }, bosses = { self.bossPanel, self.detailPanel }, quests = { self.qPanel, self.qdPanel }, runs = { self.runPanel }, trash = { self.trashPanel } }
+  for k, ps in pairs(panels) do for _, p in ipairs(ps) do p:SetShown(has and k == jview) end end
   if not has then return end
 
+  -- header
   self.title:SetText(e.name)
+  local bits = {}
+  local lv = levelsOf(e)
+  bits[#bits + 1] = (e.static and e.static.raid and "Raid" or "Dungeon") .. (lv and (", levels " .. lv) or "")
+  local nb = #bossesOf(e)
+  if nb > 0 then bits[#bits + 1] = nb .. (nb == 1 and " boss" or " bosses") end
+  local s = e.stats
+  if s then
+    bits[#bits + 1] = #s.runs .. (#s.runs == 1 and " run" or " runs") .. (s.best and (", best " .. UI.Time(s.best.duration)) or "")
+  else
+    bits[#bits + 1] = "not run by the guild yet"
+  end
+  if e.static and e.static.wings then
+    local wg = {}
+    for _, x in ipairs(e.static.wings) do wg[#wg + 1] = x.name end
+    bits[#bits + 1] = "wings: " .. table.concat(wg, ", ")
+  end
+  self.sub:SetText(table.concat(bits, "  ·  "))
   local slug = ns.Slug(e.name)
   local wantIt = ns.IsLfg and ns.IsLfg(slug)
   self.lfg.label:SetText(wantIt and "You want to run this" or "I want to run this")
@@ -658,6 +1287,7 @@ function page:Refresh(arg)
   local seekers, names = ns.LfgFor and ns.LfgFor(slug) or {}, {}
   for _, sk in ipairs(seekers) do names[#names + 1] = (sk.me and "you" or sk.name) .. (sk.level and (" " .. sk.level) or "") end
   self.lfgWho:SetText(#names > 0 and ("Want to run it: " .. table.concat(names, ", ")) or "Nobody has asked for this one yet.")
+
   local nq = #questsOf(e)
   local ar, ag, ab = UI.Accent()
   for _, t in ipairs(self.viewTabs) do
@@ -666,93 +1296,135 @@ function page:Refresh(arg)
     t.text:SetTextColor(unpack(on and C.text or C.dim))
     if t.key == "quests" then
       local qp = ns.QuestProgress and ns.QuestProgress(e.name)
-      t.text:SetText(qp and qp.total > 0 and ("Quests (" .. qp.done .. "/" .. qp.total .. ")") or nq > 0 and ("Quests (" .. nq .. ")") or "Quests")
+      t.text:SetText(qp and qp.total > 0 and ("Quests " .. qp.done .. "/" .. qp.total) or nq > 0 and ("Quests " .. nq) or "Quests")
+    elseif t.key == "runs" then
+      local nr = s and #s.runs or 0
+      t.text:SetText(nr > 0 and ("Runs " .. nr) or "Runs")
     end
-    if t.key == "runs" then local nr = e.stats and #e.stats.runs or 0; t.text:SetText(nr > 0 and ("Runs (" .. nr .. ")") or "Runs") end
+    t:SetWidth(math.max(92, (t.text:GetStringWidth() or 40) + 46))
     t:Show()
   end
-  local questsOn, runsOn = jview == "quests", jview == "runs"
-  for _, el in ipairs({ self.map, self.mapNote, self.bosses, self.scroll }) do el:SetShown(not questsOn and not runsOn) end
-  self.qscroll:SetShown(questsOn)
-  self.runList:SetShown(runsOn); self.runEmpty:Hide()
-  if runsOn then
-    for _, b in ipairs(self.floorButtons) do b:Hide() end
+  self:Layout(self.w or 800, self.h or 500)
+
+  self.filterBtn.label:SetText(ns.LootFilter and ns.LootFilter.Active() and "Loot filter: on" or "Loot filter")
+  self.filterBtn:SetShown(jview == "bosses" or jview == "trash")
+  self.entranceBtn:ClearAllPoints()
+  if self.filterBtn:IsShown() then self.entranceBtn:SetPoint("RIGHT", self.filterBtn, "LEFT", -8, 0) else self.entranceBtn:SetPoint("RIGHT", self.lfg, "LEFT", -8, 0) end
+  self.entranceBtn:SetShown(ns.DungeonEntrance and ns.DungeonEntrance(e.name) ~= nil)
+  if jview == "trash" then self:ShowTrash(e); return end
+  if jview == "runs" then
     local runs = {}
-    for i = #(e.stats and e.stats.runs or {}), 1, -1 do runs[#runs + 1] = e.stats.runs[i] end
+    for i = #(s and s.runs or {}), 1, -1 do runs[#runs + 1] = s.runs[i] end
     self.runList:SetItems(runs)
     self.runEmpty:SetShown(#runs == 0)
-    local st = e.stats
-    self.sub:SetText(st and string.format("%d %s logged.  Fastest clear %s, typical %s.", #st.runs, #st.runs == 1 and "run" or "runs",
-      st.best and UI.Time(st.best.duration) or "—", st.typical and UI.Time(st.typical) or "—") or "")
     return
   end
-  if questsOn then
-    for _, b in ipairs(self.floorButtons) do b:Hide() end
-    self.sub:SetText(e.static and e.static.levels and #e.static.levels == 2 and string.format("%s, levels %d-%d.", e.static.raid and "Raid" or "Dungeon", e.static.levels[1], e.static.levels[2]) or "")
-    if self.qdungeon ~= e.name then self.qdungeon = e.name; self.qscroll:SetVerticalScroll(0) end
+  if jview == "quests" then
+    if self.qdungeon ~= e.name then self.qdungeon = e.name; self.qlistScroll:SetVerticalScroll(0) end
     self:LayoutQuests(e)
     return
   end
-  local s = e.stats
-  self.sub:SetText(s and string.format("%d %s logged.  Fastest clear %s, typical %s, %.1f wipes per run.", #s.runs, #s.runs == 1 and "run" or "runs",
-    s.best and UI.Time(s.best.duration) or "—", s.typical and UI.Time(s.typical) or "—", s.wipes / #s.runs)
-    or ((e.journal and e.journal.desc) or ((e.static and e.static.levels and #e.static.levels == 2) and string.format("%s, levels %d-%d. Not run by the guild yet.", e.static.raid and "Raid" or "Dungeon", e.static.levels[1], e.static.levels[2])) or "Not run by the guild yet."))
-  if e.static and e.static.wings then
-    local w = {}
-    for _, x in ipairs(e.static.wings) do w[#w + 1] = x.name .. " " .. x.levels[1] .. "-" .. x.levels[2] end
-    self.sub:SetText((self.sub:GetText() or "") .. "\nWings: " .. table.concat(w, ", "))
-  end
 
-  -- floors
-  local floors = floorsOf(e)
-  local valid = false
-  for _, fl in ipairs(floors) do if fl.map == selFloor then valid = true end end
-  if not valid then selFloor = floors[1] and floors[1].map end
-  local bx = self.mapX
-  for i, fl in ipairs(floors) do
-    local b = self.floorButtons[i]
-    if not b then b = UI.Button(self.list:GetParent(), "", 80, 24, function(btn) selFloor = btn.map; ns.RefreshUI() end); self.floorButtons[i] = b end
-    b.map = fl.map
-    b.label:SetText(fl.name or ("Floor " .. i))
-    b:SetWidth(math.min(170, b.label:GetStringWidth() + 20))
-    b:ClearAllPoints(); b:SetPoint("TOPLEFT", bx, self.mapY + 30)
-    if fl.map == selFloor then b.label:SetTextColor(UI.Accent()) else b.label:SetTextColor(unpack(C.text)) end
-    bx = bx + b:GetWidth() + 6
-    b:SetShown(#floors > 1)
-  end
-
-  -- bosses and their pins on this floor
   local bosses = bossesOf(e)
   local found = false
   for _, b in ipairs(bosses) do if b.name == selBoss then found = true end end
   if not found then selBoss = bosses[1] and bosses[1].name end
-  self.bosses:SetItems(bosses)
-  local pins = {}
-  for _, b in ipairs(bosses) do
-    for _, p in ipairs(b.pins or {}) do
-      if p.m == selFloor then pins[#pins + 1] = { x = p.x, y = p.y, n = b.n, key = b.name, label = b.name, sub = "Click for abilities, loot and tips", on = b.name == selBoss } end
-    end
-  end
-  self.map:SetShown(#floors > 0)
-  local art = #floors > 0 and self.map:Draw(selFloor, self.mapW or 400, self.mapH or 267, pins)
-  self.mapNote:SetText(#floors == 0 and "The game has no map picture for this dungeon."
-    or (#pins == 0 and "No boss locations on this floor." or "Numbers are the boss order. Click a pin or a name for details.") .. (art and "" or ""))
 
+  if jview == "map" then
+    local floors = floorsOf(e)
+    local valid = false
+    for _, fl in ipairs(floors) do if fl.map == selFloor then valid = true end end
+    if not valid then selFloor = floors[1] and floors[1].map end
+    local bx = self.mapX or 16
+    for i, fl in ipairs(floors) do
+      local b = self.floorButtons[i]
+      if not b then b = UI.Button(self.mapPanel, "", 80, 24, function(btn) selFloor = btn.map; ns.RefreshUI() end); self.floorButtons[i] = b end
+      b.map = fl.map
+      b.label:SetText(fl.name or ("Floor " .. i))
+      b:SetWidth(math.min(170, b.label:GetStringWidth() + 20))
+      b:ClearAllPoints(); b:SetPoint("TOPLEFT", bx, -16)
+      if fl.map == selFloor then b.label:SetTextColor(UI.Accent()) else b.label:SetTextColor(unpack(C.text)) end
+      bx = bx + b:GetWidth() + 6
+      b:SetShown(#floors > 1)
+    end
+    for i = #floors + 1, #self.floorButtons do self.floorButtons[i]:Hide() end
+    local pins = {}
+    for _, b in ipairs(bosses) do
+      for _, p in ipairs(b.pins or {}) do
+        if p.m == selFloor then pins[#pins + 1] = { x = p.x, y = p.y, n = b.n, key = b.name, label = b.name, sub = "Click for its loot, abilities and tips", on = b.name == selBoss } end
+      end
+    end
+    self.map:SetShown(#floors > 0)
+    if #floors > 0 then self.map:Draw(selFloor, self.mapW or 400, self.mapH or 267, pins) end
+    self.mapNote:SetText(#floors == 0 and "The game has no map picture for this dungeon."
+      or (#pins == 0 and "No boss locations on this floor." or "Numbers are the boss order. Click a pin to open that boss."))
+    return
+  end
+
+  -- bosses
+  local npcs = {}
+  for _, b in ipairs(bosses) do
+    local look, npc = visual(e, b.name)
+    if not look and npc then npcs[#npcs + 1] = npc end
+  end
+  resolveLooks(npcs)
+  if self.bdungeon ~= e.name then self.bdungeon = e.name; self.bosses.offset = 0 end
+  self.bossHead:SetText("Bosses  |cff99a1b0" .. #bosses .. "|r")
+  self.bosses:SetItems(bosses)
   local boss
   for _, b in ipairs(bosses) do if b.name == selBoss then boss = b end end
-  self.bossTitle:SetText(boss and boss.name or "")
-  local hasPortrait = false
-  if boss then hasPortrait = self:SetPortrait(visual(e, boss.name)) else self:SetPortrait(nil, nil) end
-  self.bossTitle:ClearAllPoints(); self.bossTitle:SetPoint("TOPLEFT", hasPortrait and 90 or 0, hasPortrait and -26 or 0)
-  self.bossTitle:SetWidth((self.detail:GetWidth() or 300) - (hasPortrait and 90 or 0))
-  self.headH = hasPortrait and 76 or (self.bossTitle:GetStringHeight() or 20)
-  self.body:ClearAllPoints(); self.body:SetPoint("TOPLEFT", 0, -(self.headH + 8))
-  local text, loot, note
-  if boss then text, loot, note = detailText(e, boss) end
-  self.body:SetText(text or "No bosses known for this dungeon yet.")
-  local h = self:LayoutLoot(loot or {}, note)
-  self.detail:SetHeight(self.headH + (self.body:GetStringHeight() or 200) + h + 16)
-  self.scroll:SetVerticalScroll(0)
+  self:ShowBoss(e, boss)
+end
+
+-- ---- boss loot popup (right-click a boss on the dungeon tracker) ------------------------
+local pop
+function ns.ShowBossLootPopup(anchor, dungeonName, bossName)
+  if not (dungeonName and bossName) then return end
+  if pop and pop:IsShown() and pop.key == dungeonName .. "/" .. bossName then pop:Hide(); return end
+  local e
+  for _, x in ipairs(dungeonList()) do if ns.Slug(x.name) == ns.Slug(dungeonName) then e = x end end
+  local boss
+  for _, b in ipairs(e and bossesOf(e) or {}) do if b.name == bossName then boss = b end end
+  local loot = (e and boss) and lootOf(e, boss) or {}
+  local shown = {}
+  for _, it in ipairs(loot) do if not ns.LootFilter or ns.LootFilter.Pass(it.id) then shown[#shown + 1] = it end end
+  if not pop then
+    pop = CreateFrame("Frame", "FoxdenBossLoot", UIParent)
+    pop:SetFrameStrata("DIALOG"); pop:EnableMouse(true)
+    UI.Fill(pop, C.surface); UI.Border(pop)
+    pop.title = UI.Text(pop, 13); pop.title:SetPoint("TOPLEFT", 12, -10)
+    pop.close = UI.CloseButton(pop, function() pop:Hide() end); pop.close:SetPoint("TOPRIGHT", -4, -4)
+    pop.note = UI.Text(pop, 11, C.dim); pop.note:SetWordWrap(true)
+    pop.rows = {}
+    if UISpecialFrames then tinsert(UISpecialFrames, "FoxdenBossLoot") end
+  end
+  local W = 300
+  pop.key = dungeonName .. "/" .. bossName
+  pop.title:SetText(bossName)
+  local y = 34
+  waitingItems = false
+  for i, it in ipairs(shown) do
+    if i > 12 then break end
+    local r = pop.rows[i] or itemCard(pop, 40); pop.rows[i] = r
+    fillCard(r, it.id, it.name)
+    local kind = ns.WishKind and ns.WishKind(it.id)
+    r.seen:SetText(kind and (ns.WISH_COLOR[kind] .. ns.WISH_LABEL[kind] .. "|r") or "")
+    r.wish = { boss = bossName, dungeon = dungeonName }
+    r.star:Show(); r.star.tex:SetDesaturated(not kind); r.star.tex:SetAlpha(kind and 1 or 0.35)
+    r:ClearAllPoints(); r:SetPoint("TOPLEFT", 10, -y); r:SetWidth(W - 20); r:Show()
+    y = y + 44
+  end
+  for i = math.min(#shown, 12) + 1, #pop.rows do pop.rows[i]:Hide() end
+  pop.note:ClearAllPoints(); pop.note:SetPoint("TOPLEFT", 12, -y - 2); pop.note:SetWidth(W - 24)
+  pop.note:SetText(#loot == 0 and "No loot known for this boss yet." or (#shown < #loot and ((#loot - #shown) .. " hidden by the loot filter.") or ""))
+  y = y + ((pop.note:GetText() or "") ~= "" and 22 or 4)
+  pop:SetSize(W, y + 8)
+  pop:ClearAllPoints()
+  local x = anchor:GetCenter()
+  if x and x > (UIParent:GetWidth() or 1000) / 2 then pop:SetPoint("TOPRIGHT", anchor, "TOPLEFT", -8, 0) else pop:SetPoint("TOPLEFT", anchor, "TOPRIGHT", 8, 0) end
+  pop:Show()
+  -- item names arrive a moment after we ask: draw again once
+  if waitingItems then C_Timer.After(0.6, function() if pop:IsShown() and pop.key == dungeonName .. "/" .. bossName then pop:Hide(); ns.ShowBossLootPopup(anchor, dungeonName, bossName) end end) end
 end
 
 ns.RegisterPage(page)

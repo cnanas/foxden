@@ -33,5 +33,7 @@ The boss NPC IDs in `Data/Dungeons.lua` come from QuestieDB by the Questie team,
 https://github.com/Questie/QuestieDB, used under the GNU General Public License v3 as the
 Questie team permits (see their LICENSE.md). Foxden itself is GPL-3.0-or-later.
 
+`Data/Quests.lua` (every quest's giver and turn-in with their spots, levels, who can take it and what it needs first, for the map, minimap and quest tracker) comes from QuestieDB too, under the same licence.
+
 `Data/Rares.lua` (rares and rare elites with their levels and spawn points) comes from QuestieDB
 under the same terms.

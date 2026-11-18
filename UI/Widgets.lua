@@ -182,7 +182,7 @@ end
 function ns.MaterialsFor(itemID, name)
   local site = ns.Site and ns.Site()
   if not site then return nil end
-  local m = itemID and type(site.mats) == "table" and site.mats[itemID]
+  local m = itemID and type(site.mats) == "table" and (site.mats[itemID] or site.mats[tostring(itemID)])
   if not m and name and type(site.matsByName) == "table" then m = site.matsByName[name] end
   return type(m) == "table" and #m > 0 and m or nil
 end
@@ -270,8 +270,12 @@ function UI.Dropdown(parent, width, title, onChange, multi)
   d.arrow:SetTexture("Interface\\ChatFrame\\ChatFrameExpandArrow"); d.arrow:SetRotation(-math.pi / 2); d.arrow:SetVertexColor(0.7, 0.72, 0.78)
   d.options, d.current, d.offset = {}, nil, 0
 
-  local menu = CreateFrame("Frame", nil, d)
+  -- The list lives on UIParent, not inside the page, so nothing on the page (a clipping
+  -- scroll area, a frame raised above it, a strata reset) can sit over it or eat its clicks.
+  local menu = CreateFrame("Frame", nil, UIParent)
   menu:SetFrameStrata("FULLSCREEN_DIALOG")
+  if menu.SetFixedFrameStrata then menu:SetFixedFrameStrata(true) end
+  menu:SetToplevel(true); menu:SetClampedToScreen(true)
   menu:SetPoint("TOPLEFT", d, "BOTTOMLEFT", 0, -3)
   UI.Fill(menu, C.surface); UI.Border(menu, { 1, 1, 1, 0.18 })
   menu:Hide(); menu:EnableMouse(true); menu:EnableMouseWheel(true)
@@ -303,6 +307,7 @@ function UI.Dropdown(parent, width, title, onChange, multi)
       local r = menu.rows[i]
       if not r then
         r = CreateFrame("Button", nil, menu); r:SetHeight(ROW)
+        r:RegisterForClicks("LeftButtonUp")
         r.hover = UI.Fill(r, C.hover, "ARTWORK"); r.hover:Hide()
         r.check = r:CreateTexture(nil, "OVERLAY"); r.check:SetSize(14, 14); r.check:SetPoint("LEFT", 6, 0)
         r.check:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
@@ -358,13 +363,34 @@ function UI.Dropdown(parent, width, title, onChange, multi)
       -- an invisible full-screen button under the list: a click anywhere else closes it
       catcher = CreateFrame("Button", nil, UIParent)
       catcher:SetAllPoints(UIParent); catcher:SetFrameStrata("FULLSCREEN")
+      if catcher.SetFixedFrameStrata then catcher:SetFixedFrameStrata(true) end
+      catcher:RegisterForClicks("AnyUp")
       catcher:SetScript("OnClick", closeMenu)
     end
     catcher:Show()
     d.offset = 0
+    -- match the window's scale, since the list isn't inside it
+    local es, us = d:GetEffectiveScale(), UIParent:GetEffectiveScale()
+    if es and us and us > 0 then menu:SetScale(es / us) end
     draw()
-    menu:Show(); openMenu = menu
+    menu:Show(); menu:Raise(); openMenu = menu
   end)
   d:SetScript("OnHide", function() if openMenu == menu then closeMenu() end end)
+  -- single pickers: the mouse wheel over the button steps through the choices
+  if not multi then
+    d:EnableMouseWheel(true)
+    d:SetScript("OnMouseWheel", function(_, delta)
+      local n = #d.options
+      if n == 0 then return end
+      local at = 0
+      for i, o in ipairs(d.options) do if o.value == d.current then at = i end end
+      local i = math.max(1, math.min(n, at - delta))
+      if i == at then return end
+      d.current = d.options[i].value
+      d.value:SetText(summary())
+      if menu:IsShown() then draw() end
+      onChange(d.current)
+    end)
+  end
   return d
 end

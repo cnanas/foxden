@@ -36,6 +36,7 @@ ns.RegisterModule({
   name = "Thing",
   OnRunStart  = function(self, run) run.thing = {} end,
   OnCombatEnd = function(self, run) end,   -- meter has settled after a fight
+  OnRunDone   = function(self, run) end,   -- the last boss is down (run.doneAt); saved later, on leaving
   OnRunFinish = function(self, run) end,   -- last chance before the run is saved
   Migrate     = function(self, run, fromSchema) end,
   events = {
@@ -96,6 +97,8 @@ Bump `ns.SCHEMA` in `Core/Core.lua` and upgrade old runs in the owning module's 
 | `stats, segments, combatSeconds, fights` | Meter |
 | `route` | Route |
 | `relayedTo, relayedAt` | Relay (sender side: which courier took it) |
+
+Quests: Core/Quests.lua is the engine (Data/Quests.lua = QuestieDB via `npm run sync:questdb`; `ns.Quests.Available/Givers/Log`, listeners via `ns.Quests.OnChange`). UI/QuestPins.lua merges it with the dungeon chains (`ns.QuestMarks`) for the world map; UI/MinimapPins.lua places the same marks on the minimap from world coordinates; UI/QuestTracker.lua is the zone-grouped tracker. `FoxdenDB.questSpots` (Modules/QuestSpots.lua: where quests start and end, plus learned chain links `p`, title, level, objective, faction; uploaded by the companion to /api/quests). UI/QuestPins.lua draws dungeon quest givers on the world map through MapPins (`ns.DrawQuestPins`), from `SiteData.quests` rows whose field 23 is the chain (built on the website from QuestieDB + learned links).
 
 Not part of a run: `FoxdenDB.journal` (Modules/Journal.lua: the game's Encounter Journal, re-read after patches or with `/fox journaltest`), `FoxdenDB.crafting` (professions, inventory, guild crafters).
 

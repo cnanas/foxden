@@ -32,7 +32,7 @@ local sending                    -- sender: { run, to, sentAt }
 local function me() return ns.CharKey() end
 local function ready() return ns.settings.welcomed and IsInGuild() end
 local function fullName(sender)
-  if not sender:find("-") then sender = sender .. "-" .. ((GetNormalizedRealmName and GetNormalizedRealmName()) or "") end
+  sender = ns.SenderKey(sender) -- "Name-Realm", without Forever's second name
   return sender
 end
 

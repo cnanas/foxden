@@ -1,7 +1,8 @@
 -- Foxden: the dungeon tracker. A small window while you're in a dungeon run:
 -- time inside, XP gained, gold looted, and the dungeon's bosses (grey until killed).
 -- XP and gold are also saved on the run (run.xp, run.gold).
--- Drag to move (position is remembered); X hides it for this run.
+-- Drag to move (position is remembered); click for the full run; X hides it for this run.
+-- The clock starts on the first pull and stops at the last boss (ns.RunElapsed).
 -- Boss portraits: the game's journal when it has them (Forever's is empty), else the
 -- look Foxden noted when a guildmate fought that boss (FoxdenDB.bossLooks, the website).
 
@@ -82,10 +83,24 @@ local function bossesFor(name, run)
     for _, id in ipairs(b.ids or {}) do if seen[id] then dup = true end end
     if not dup then add(b.ids and b.ids[1], b.name) end
     local e = learned[(b.ids and b.ids[1]) or b.name]
-    if e then e.ids = b.ids end
+    if e then e.ids, e.npc = b.ids, b.npc end
+    -- the same boss learned from the guild under its encounter ID: give it the NPC too
+    for _, x in ipairs(list) do if x.name == b.name and not x.npc then x.npc, x.ids = b.npc, x.ids or b.ids end end
   end
   local known = #list
   for _, k in ipairs(run and run.bosses or {}) do add(k.id, k.name, k.look) end -- killed now, not known before
+  -- several dungeons in one (Scarlet Monastery): only this wing's bosses, once Foxden knows the wing
+  local w = ns.RunWing and ns.RunWing(run)
+  if w then
+    local keep, kept = {}, {}
+    for _, n in ipairs(w.bosses) do keep[n] = true end
+    for _, b in ipairs(list) do if keep[b.name] then kept[#kept + 1] = b end end
+    -- in the wing's order
+    local order = {}
+    for i, n in ipairs(w.bosses) do order[n] = i end
+    table.sort(kept, function(a, b) return (order[a.name] or 99) < (order[b.name] or 99) end)
+    return kept, #kept
+  end
   return list, known
 end
 
@@ -106,7 +121,9 @@ end
 local function setPortrait(tex, b)
   local icon = journalIcon(b)
   if icon then tex:SetTexture(icon); return true end
+  -- the look a guildmate noted in the fight, else the one the Dungeons page read for its NPC
   local look = b.look or (b.encounterID and ns.db and ns.db.bossLooks and ns.db.bossLooks[b.encounterID])
+    or (b.npc and ns.db and ns.db.npcLooks and ns.db.npcLooks[b.npc])
   if look and SetPortraitTextureFromCreatureDisplayID and pcall(SetPortraitTextureFromCreatureDisplayID, tex, look) then return true end
   tex:SetTexture(SKULL)
   return false
@@ -179,7 +196,20 @@ local function build()
   frame:SetFrameStrata("MEDIUM")
   frame:SetClampedToScreen(true)
   frame:EnableMouse(true); frame:SetMovable(true); frame:RegisterForDrag("LeftButton")
-  frame:SetScript("OnDragStart", frame.StartMoving)
+  frame:SetScript("OnDragStart", function(self) self.dragged = true; self:StartMoving() end)
+  -- a click (not a drag) opens the run in Foxden: every stat, boss times, the party
+  frame:SetScript("OnMouseDown", function(self) self.dragged = false end)
+  frame:SetScript("OnMouseUp", function(self, button)
+    if self.dragged or button ~= "LeftButton" then return end
+    if ns.LiveRun() then ns.OpenPage("runs", "live") end
+  end)
+  frame:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+    GameTooltip:AddLine("Click for the full run summary")
+    GameTooltip:AddLine("Drag to move it.", 0.7, 0.72, 0.78)
+    GameTooltip:Show()
+  end)
+  frame:SetScript("OnLeave", GameTooltip_Hide)
   frame:SetScript("OnDragStop", function(self)
     self:StopMovingOrSizing()
     local p, _, rp, x, y = self:GetPoint()
@@ -200,7 +230,7 @@ local function build()
   rule:SetPoint("TOPLEFT", PAD, -88); rule:SetPoint("TOPRIGHT", -PAD, -88); rule:SetHeight(1)
 
   frame.icons = {}
-  frame.bossLine = UI.Text(frame, 11, C.dim)
+  frame.bossLine = UI.Text(frame, 11, C.dim); frame.bossLine:SetWidth(W - PAD * 2); frame.bossLine:SetWordWrap(true)
   frame.splitLine = UI.Text(frame, 11, C.dim)
   frame.wishLine = UI.Text(frame, 11, C.dim); frame.wishLine:SetWidth(W - PAD * 2); frame.wishLine:SetWordWrap(true)
   frame:SetScript("OnUpdate", function(self, e)
@@ -208,7 +238,7 @@ local function build()
     if self.tick < 1 then return end
     self.tick = 0
     local run = ns.GetCurrentRun()
-    if run then self.clock:SetText(UI.Time(GetServerTime() - run.startTime)) end
+    if run and run.pulled and not run.doneAt then self.clock:SetText(UI.Time(ns.RunElapsed(run))) end
   end)
 end
 
@@ -230,9 +260,17 @@ local function icon(i)
     GameTooltip:AddLine(self.name or "Boss")
     GameTooltip:AddLine(self.dead and "Killed" or "Not killed yet", 0.7, 0.7, 0.75)
     for _, w in ipairs(self.wishes or {}) do GameTooltip:AddLine("Wishlist: " .. (w.n or "?") .. " (" .. (ns.WISH_LABEL[w.k or "ms"] or "") .. ")", 1, 0.82, 0.3) end
+    GameTooltip:AddLine("Right-click for its loot", 0.6, 0.63, 0.69)
     GameTooltip:Show()
   end)
   b:SetScript("OnLeave", GameTooltip_Hide)
+  -- right-click: what this boss drops (the Dungeons page's list, loot filter applied)
+  b:SetScript("OnMouseUp", function(self, button)
+    if button == "RightButton" and ns.ShowBossLootPopup then
+      local run = ns.GetCurrentRun()
+      ns.ShowBossLootPopup(self, run and run.dungeon, self.name)
+    end
+  end)
   frame.icons[i] = b
   return b
 end
@@ -247,14 +285,22 @@ local function refresh()
     local p = ns.settings.trackerPos
     if p then frame:SetPoint(p[1], UIParent, p[2], p[3], p[4]) else frame:SetPoint("TOPRIGHT", -220, -220) end
   end
-  frame.title:SetText(run.dungeon or "Dungeon")
-  frame.clock:SetText(UI.Time(GetServerTime() - run.startTime))
+  frame.title:SetText(ns.RunName(run) .. ((ns.Wings and ns.Wings[run.instanceID] and not run.wing) and "  |cff999fb0(which wing?)|r" or ""))
+  local t = UI.Time(ns.RunElapsed(run))
+  if not run.pulled then t = "|cff999fb0" .. t .. "|r" elseif run.doneAt then t = "|cff6fd39a" .. t .. "|r" end
+  frame.clock:SetText(t)
   local _, _, level = xpNow()
   local maxLevel = (GetMaxPlayerLevel and GetMaxPlayerLevel()) or 60
   frame.xp:SetText(level >= maxLevel and "|cff999fb0max|r" or UI.Num(run.xp or 0))
   frame.gold:SetText(ns.Money(run.gold or 0))
 
   local bosses, known = bossesFor(run.dungeon, run)
+  -- portraits not known yet: have the game load those bosses' looks (they show on the next refresh)
+  local need = {}
+  for _, b in ipairs(bosses) do
+    if b.npc and not b.look and not (ns.db.npcLooks and ns.db.npcLooks[b.npc]) then need[#need + 1] = b.npc end
+  end
+  if #need > 0 and ns.ResolveNpcLooks then ns.ResolveNpcLooks(need) end
   local wishes = wishesHere(run.dungeon)
   local dead = 0
   local perRow = math.floor((W - PAD * 2 + GAP) / (ICON + GAP))
@@ -278,12 +324,18 @@ local function refresh()
   local w = wipes > 0 and string.format("  ·  %d %s", wipes, wipes == 1 and "wipe" or "wipes") or ""
   local top = rows > 0 and (-102 - rows * (ICON + GAP) - 4) or -100
   frame.bossLine:ClearAllPoints(); frame.bossLine:SetPoint("TOPLEFT", PAD, top)
-  frame.bossLine:SetText(known > 0 and string.format("%d/%d bosses%s", dead, #bosses, w)
-    or ("Bosses killed: " .. #(run.bosses or {}) .. w .. (#bosses == 0 and "  ·  the guild learns them as you go" or "")))
+  local left = #bosses - dead
+  local line
+  if run.doneAt then line = string.format("|cff6fd39aCleared|r  ·  %d/%d bosses%s", dead, #bosses, w)
+  elseif known > 0 then line = string.format("%d/%d bosses  ·  %s%s", dead, #bosses, left == 1 and "1 left" or (left .. " left"), w)
+  else line = "Bosses killed: " .. #(run.bosses or {}) .. w .. (#bosses == 0 and "  ·  the guild learns them as you go" or "") end
+  if not run.pulled then line = line .. "  ·  the clock starts on your first pull" end
+  frame.bossLine:SetText(line)
   -- how you're doing against the guild's best run, as of the last boss you killed
-  local times, total, by = bestRun(run.dungeon)
+  local times, total, by = {}, nil, nil
+  if not (ns.Wings and ns.Wings[run.instanceID]) then times, total, by = bestRun(run.dungeon) end -- wings would mix
   local last = run.bosses and run.bosses[#run.bosses]
-  local y = top - 18
+  local y = top - math.max(14, frame.bossLine:GetStringHeight() or 14) - 4
   if last and times[last.id] then
     local delta = (last.killedAt or 0) - times[last.id]
     frame.splitLine:SetText(string.format("%s%s|r vs guild best at %s", delta <= 0 and "|cff6fd39a" or "|cfff06b6b", signed(delta), last.name or "the last boss"))

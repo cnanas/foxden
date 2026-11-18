@@ -10,7 +10,9 @@ local ADDON, ns = ...
 -- that owns the changed data to upgrade older runs in its Migrate hook.
 ns.SCHEMA = 3
 
-ns.DEFAULTS = { track = true, chat = true, remind = true, sendNow = true, keep = 100, scale = 1, share = true, offer = false, shareLocation = true, welcomed = false, copyPopup = true, levelCard = true, shareLevelUps = true, guildDings = true, learnAll = true, levelScreenshot = false, tracker = true, minimapButton = true, rareAlerts = true }
+ns.DEFAULTS = { track = true, chat = true, remind = true, sendNow = true, keep = 100, scale = 1, share = true, offer = false, shareLocation = true, welcomed = false, copyPopup = true, runSummary = true, levelCard = true, shareLevelUps = true, guildDings = true, learnAll = true, levelScreenshot = false, tracker = true, minimapButton = true, rareAlerts = true, questPins = true, questPinsAll = true, questMinimap = true, questTracker = true, hideGameTracker = true,
+  questAhead = 3, questShowGrey = false, questMarkSize = 18, questTrackerFont = 12, questTrackerWidth = 270, questTrackerBg = 0.45,
+  questTrackerLocked = false, questShowDoneObj = true, questTrackerItems = true, itemSource = true }
 ns.settings = setmetatable({}, { __index = ns.DEFAULTS }) -- replaced at load
 
 local db, run
@@ -29,6 +31,23 @@ function ns.CharKey()
   local name = UnitName("player")
   local realm = (GetNormalizedRealmName and GetNormalizedRealmName()) or (GetRealmName() or ""):gsub("%s", "")
   return name .. "-" .. realm
+end
+
+-- A name from chat, addon messages or the guild roster, as a CharKey ("Name-Realm"). Forever
+-- adds a second name ("Foxwarrior Forever-Realm", "Valourel Blackrose"); the character is the first.
+function ns.SenderKey(sender)
+  if type(sender) ~= "string" or ns.IsSecret(sender) then return sender end
+  local name, realm = sender:match("^([^-]+)-(.+)$")
+  name = name or sender
+  realm = realm or (GetNormalizedRealmName and GetNormalizedRealmName()) or (GetRealmName() or ""):gsub("%s", "")
+  return (name:match("^%S+") or name) .. "-" .. realm
+end
+
+-- Is this name (roster, chat, addon message, website) the character you're playing?
+-- "Foxwarrior", "Foxwarrior-Realm" and Forever's "Foxwarrior Forever" all are.
+function ns.IsMe(name)
+  if type(name) ~= "string" or ns.IsSecret(name) or name == "" then return false end
+  return ns.SenderKey(name) == ns.CharKey()
 end
 
 -- Saved data that isn't tied to a dungeon run: professions, inventory, guild crafters.
@@ -68,13 +87,14 @@ function ns.Changed() if ns.RefreshUI then ns.RefreshUI() end end
 --   OnRunStart(self, run)     a run just started; add your fields to it
 --   OnCombatEnd(self, run)    a fight ended and the meter has settled
 --   OnRunFinish(self, run)    last chance to record before the run is saved
+--   OnRunDone(self, run)      the last boss is down (the run is saved when you leave)
 --   OnRunSaved(self, run)     the run is saved (relay, copy box)
 --   Migrate(self, run, from)  upgrade a run saved with an older schema
 -- Hooks are isolated: an error in one module is reported and the rest carry on.
 
 ns.modules = {}
 local handlers = {} -- event -> { module, ... }
-local CORE_EVENTS = { ADDON_LOADED = true, PLAYER_ENTERING_WORLD = true, ZONE_CHANGED_NEW_AREA = true, PLAYER_REGEN_ENABLED = true }
+local CORE_EVENTS = { ADDON_LOADED = true, PLAYER_ENTERING_WORLD = true, ZONE_CHANGED_NEW_AREA = true, PLAYER_REGEN_ENABLED = true, PLAYER_REGEN_DISABLED = true }
 
 local function call(mod, fn, ...)
   local ok, err = pcall(fn, mod, ...)
@@ -172,12 +192,94 @@ end
 
 local function saveRun(r, reason, endTime)
   r.endTime = endTime
-  r.duration = endTime - r.startTime
+  -- a cleared run's time stops at the last boss, not when you walked out
+  r.duration = ((r.doneAt and r.doneAt <= endTime) and r.doneAt or endTime) - r.startTime
   r.endReason = reason
   stripScratch(r)
   r.pendingFinish = nil
   table.insert(db.runs, r)
   prune()
+end
+
+-- ---- first pull and the last boss ---------------------------------------------------
+
+-- The clock starts on the first pull, not at the door: shift the run's start (and the
+-- route's few pre-pull timestamps) to now.
+local function markPulled()
+  if not run or run.pulled then return end
+  run.pulled = true
+  if (run.fights or 0) == 0 and #(run.bosses or {}) == 0 then
+    local shift = GetServerTime() - run.startTime
+    if shift > 0 then
+      run.startTime = run.startTime + shift
+      local rt = run.route
+      for _, f in ipairs(rt and rt.floors or {}) do f.at = math.max(0, (f.at or 0) - shift) end
+      for _, p in ipairs(rt and rt.path or {}) do p.t = math.max(0, (p.t or 0) - shift) end
+    end
+  end
+  ns.Changed()
+end
+
+-- Where the last boss isn't the last in the game's list. Dungeons with wings: Data/Wings.lua.
+local FINAL = { [109] = "Shade of Eranikus" }
+
+local function bossKilled(r, b)
+  for _, k in ipairs(r.bosses or {}) do
+    if k.name == b.name then return true end
+    for _, id in ipairs(b.ids or {}) do if k.id == id then return true end end
+  end
+  return false
+end
+
+-- Is the dungeon done? Every boss down, or its final boss down; for a dungeon with wings,
+-- the wing's last boss (once Foxden knows the wing). nil when Foxden doesn't know the
+-- dungeon's bosses, so the run ends at the door.
+function ns.RunCleared(r)
+  local d = r and ns.Dungeons and ns.Dungeons[r.instanceID]
+  if not d or not d.bosses or #d.bosses == 0 then return nil end
+  if ns.Wings and ns.Wings[r.instanceID] then
+    local w = ns.RunWing and ns.RunWing(r)
+    if not w then return false end
+    for _, b in ipairs(d.bosses) do if b.name == w.final then return bossKilled(r, b) end end
+    return bossKilled(r, { name = w.final })
+  end
+  local all = true
+  for _, b in ipairs(d.bosses) do if not bossKilled(r, b) then all = false end end
+  if all then return true end
+  if d.wings then return false end
+  local final = FINAL[r.instanceID]
+  if final == false then return false end
+  for _, b in ipairs(d.bosses) do
+    if (final and b.name == final) or (not final and b == d.bosses[#d.bosses]) then return bossKilled(r, b) end
+  end
+  return false
+end
+
+-- Bosses Foxden expects in this dungeon (0 if unknown) and how many are down.
+function ns.RunBossCount(r)
+  local list = ns.RunDungeonBosses and ns.RunDungeonBosses(r) or {}
+  local total, down = #list, 0
+  for _, b in ipairs(list) do if bossKilled(r, b) then down = down + 1 end end
+  return total, down
+end
+
+-- After a kill: if that was the last boss, stop the clock and say so (the summary pops up).
+function ns.CheckRunDone()
+  if not run or run.doneAt or run._notDungeon or not ns.RunCleared(run) then return end
+  local last = run.bosses and run.bosses[#run.bosses]
+  run.doneAt = last and last.killedAt and (run.startTime + last.killedAt) or GetServerTime()
+  fire("OnRunDone", run)
+  say(string.format("%s cleared in %s.", ns.RunName and ns.RunName(run) or run.dungeon, ns.UI and ns.UI.Time(run.doneAt - run.startTime) or ""))
+  ns.Changed()
+end
+
+-- Seconds on the run's clock: 0 before the first pull, frozen after the last boss.
+function ns.RunElapsed(r)
+  if not r then return 0 end
+  if r.duration and not (r == run) then return r.duration end
+  if r.doneAt then return r.doneAt - r.startTime end
+  if not r.pulled then return 0 end
+  return GetServerTime() - r.startTime
 end
 
 local function finishRun(reason)
@@ -223,12 +325,18 @@ local function onLoad()
   db = FoxdenDB
   db.runs = db.runs or {}
   db.settings = db.settings or {}
+  -- 2.3.0 shipped "hide the game's quest tracker" off, and that default was saved; it's on now
+  if not db.settings.gameTrackerV2 then db.settings.hideGameTracker = nil; db.settings.gameTrackerV2 = true end
   for k, v in pairs(ns.DEFAULTS) do if db.settings[k] == nil then db.settings[k] = v end end
   ns.settings, ns.db = db.settings, db
 
   for _, r in ipairs(db.runs) do migrate(r) end
   run = db.current -- resume after /reload mid-dungeon
-  if run then migrate(run) end
+  if run then
+    migrate(run)
+    if not run.pulled and ((run.fights or 0) > 0 or #(run.bosses or {}) > 0) then run.pulled = true end
+    C_Timer.After(3, function() ns.CheckRunDone() end) -- cleared before this version could tell
+  end
   fire("OnLoad", db)
 
   -- a run left open from an old session (logged out inside a dungeon) is closed
@@ -245,6 +353,8 @@ frame:SetScript("OnEvent", function(_, event, ...)
     onLoad()
   elseif event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" then
     C_Timer.After(1, checkZone)
+  elseif event == "PLAYER_REGEN_DISABLED" then
+    if run and not run._notDungeon then markPulled() end
   elseif event == "PLAYER_REGEN_ENABLED" then
     if run then run.lastSeen = GetServerTime() end
     -- give the damage meter a moment to close the fight before modules read it
@@ -309,6 +419,10 @@ SlashCmdList.FOXDEN = function(msg)
     if run then finishRun("ended manually") else say("No run in progress.", true) end
   elseif msg == "sync" or msg == "send" then
     ns.Sync()
+  elseif msg == "quests" or msg == "questtest" then
+    if ns.QuestReport then ns.QuestReport() end
+  elseif msg == "marktest" then
+    if ns.MarkTest then ns.MarkTest() end
   elseif msg == "maptest" then
     if ns.MapTest then ns.MapTest() end
   elseif msg == "levelup" then
@@ -325,6 +439,10 @@ SlashCmdList.FOXDEN = function(msg)
     if ns.OpenPage then ns.OpenPage("trainer") end
   elseif msg == "copy" then
     if ns.ShowCopyRun then ns.ShowCopyRun() end
+  elseif msg == "summary" then
+    -- the run you're in, else the last one saved
+    local r = ns.LiveRun() or db.runs[#db.runs]
+    if r and ns.ShowRunSummary then ns.ShowRunSummary(r, r == run) else say("No runs yet.", true) end
   elseif msg == "welcome" then
     if ns.ShowWelcome then ns.ShowWelcome() end
   elseif msg == "journaltest" or msg == "journalscan" then
@@ -336,6 +454,6 @@ SlashCmdList.FOXDEN = function(msg)
       if ok and text then say(text, true) end
     end
   else
-    say("/fox (dashboard) · /fox options · /fox status · /fox end · /fox send · /fox copy · /fox note · /fox trainer · /fox levelup · /fox maptest · /fox journaltest · /fox welcome", true)
+    say("/fox (dashboard) · /fox options · /fox status · /fox end · /fox send · /fox summary · /fox copy · /fox note · /fox trainer · /fox levelup · /fox maptest · /fox journaltest · /fox welcome", true)
   end
 end

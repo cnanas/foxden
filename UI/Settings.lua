@@ -11,6 +11,7 @@ local CONTENT_W = 560
 local rows = {}
 local root = CreateFrame("Frame")
 root.name = "Foxden"
+ns.SettingsRoot = root -- also shown inside the Foxden window (UI/Window.lua)
 local scroll = CreateFrame("ScrollFrame", nil, root)
 scroll:SetAllPoints()
 local panel = CreateFrame("Frame", nil, scroll)
@@ -47,6 +48,7 @@ intro:SetText("Your guild's dungeon log, journal, roster and crafting, in game."
 
 -- actions
 local open = UI.Button(panel, "Open dashboard", 130, 28, function()
+  if ns.InWindowSettings and ns.InWindowSettings() then ns.OpenPage("overview"); return end
   if SettingsPanel and SettingsPanel:IsShown() and HideUIPanel then HideUIPanel(SettingsPanel) end
   ns.ToggleWindow()
 end, "primary")
@@ -89,13 +91,26 @@ local r4 = add(UI.Toggle(panel, CONTENT_W, "Show the copy box after runs",
 local r5 = add(UI.Toggle(panel, CONTENT_W, "Dungeon tracker",
   "A small window in dungeons: time inside, XP gained, gold looted and which bosses are down.", get("tracker"), function(v) ns.settings.tracker = v; if ns.RefreshTracker then ns.RefreshTracker() end end), r4)
 
+local r5b = add(UI.Toggle(panel, CONTENT_W, "Run summary",
+  "When the last boss dies (or you leave early): time, XP, gold and boss times, with a link to the full run.", get("runSummary"), set("runSummary")), r5)
+
 local r6 = add(UI.Toggle(panel, CONTENT_W, "Minimap button",
-  "A Foxden button on the minimap (or in your minimap button bar): click to open, right-click for settings.", get("minimapButton"), function(v) ns.settings.minimapButton = v; if ns.RefreshMinimapButton then ns.RefreshMinimapButton() end end), r5)
+  "A Foxden button on the minimap (or in your minimap button bar): click to open, right-click for settings.", get("minimapButton"), function(v) ns.settings.minimapButton = v; if ns.RefreshMinimapButton then ns.RefreshMinimapButton() end end), r5b)
 
 local r7 = add(UI.Toggle(panel, CONTENT_W, "Rare alerts",
   "Tell guildmates when you find a rare, and show a note when they find one.", get("rareAlerts"), set("rareAlerts")), r6)
+local r7b = add(UI.Toggle(panel, CONTENT_W, "Item sources in tooltips",
+  "Which boss or quest an item comes from, at the bottom of its tooltip.", get("itemSource"), set("itemSource")), r7)
+local sQ = section("Quests", r7b)
+-- the quest helper has its own page in the Foxden window
+local r8 = CreateFrame("Frame", nil, panel); r8:SetSize(CONTENT_W, 44); r8.Refresh = function() end
+local r8b = UI.Button(r8, "Open the Quests page", 180, 26, function() if ns.OpenPage then ns.OpenPage("quests") end end)
+r8b:SetPoint("LEFT", 0, 0)
+local r8t = UI.Text(r8, 11, C.dim); r8t:SetPoint("LEFT", r8b, "RIGHT", 12, 0)
+r8t:SetText("Map and minimap marks, the quest tracker")
+add(r8, sQ, true)
 
-local sL = section("Leveling", r7)
+local sL = section("Leveling", r8)
 local rL1 = add(UI.Toggle(panel, CONTENT_W, "Show the level-up card",
   "Your gains, how long the level took, what's new at your trainer and guildmates near your level.", get("levelCard"), set("levelCard")), sL, true)
 local rL2 = add(UI.Toggle(panel, CONTENT_W, "Tell the guild when I level up",
@@ -164,7 +179,9 @@ elseif InterfaceOptions_AddCategory then
   InterfaceOptions_AddCategory(root)
 end
 
+-- /fox options, the minimap button's right-click: inside the Foxden window
 function ns.OpenSettings()
+  if ns.ShowSettingsInWindow then ns.ShowSettingsInWindow(); return end
   if category and Settings.OpenToCategory then
     Settings.OpenToCategory(category.GetID and category:GetID() or category.ID)
   elseif InterfaceOptionsFrame_OpenToCategory then

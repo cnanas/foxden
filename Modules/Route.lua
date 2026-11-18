@@ -66,7 +66,7 @@ local function sample()
   if not run then if ticker then ticker:Cancel(); ticker = nil end; return end
   local r = run.route
   if not r then return end
-  local t = GetServerTime() - run.startTime
+  local t = math.max(0, GetServerTime() - run.startTime)
   local map = bestMap()
   if not map then return end
 

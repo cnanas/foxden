@@ -1,0 +1,8 @@
+<Bindings>
+	<Binding name="FOXDEN_TOGGLE" header="FOXDEN" category="ADDONS">
+		Foxden_Toggle()
+	</Binding>
+	<Binding name="FOXDEN_OPENITEM" category="ADDONS">
+		Foxden_OpenHoveredItem()
+	</Binding>
+</Bindings>
