@@ -51,6 +51,8 @@ function page:Build(f)
     if selectedId and selectedId ~= "live" then StaticPopup_Show("FOXDEN_DELETE", nil, nil, selectedId) end
   end, "danger")
   d.delete:SetPoint("TOPRIGHT")
+  d.finish = UI.Button(d, "End run", 80, 24, function() if ns.AskEndRun then ns.AskEndRun() end end)
+  d.finish:SetPoint("TOPRIGHT")
   d.viewTabs = {}
   local x = 0
   for _, view in ipairs(ns.views) do
@@ -100,7 +102,7 @@ function page:Refresh(arg)
 
   local d = self.detail
   local has = sel ~= nil
-  d.title:SetShown(has); d.sub:SetShown(has); d.strip:SetShown(has); d.delete:SetShown(has and not sel.live)
+  d.title:SetShown(has); d.sub:SetShown(has); d.strip:SetShown(has); d.delete:SetShown(has and not sel.live); d.finish:SetShown(has and sel.live == true)
   for _, b in ipairs(d.viewTabs) do b:SetShown(has) end
   d.empty:SetShown(not has)
   for key, pane in pairs(d.panes) do pane:SetShown(has and key == viewKey) end
@@ -110,7 +112,7 @@ function page:Refresh(arg)
   d.title:SetText(run.dungeon and ns.RunName(run) or "Unknown")
   local bits = {}
   if run.difficulty and run.difficulty ~= "" then bits[#bits + 1] = run.difficulty end
-  if sel.live then bits[#bits + 1] = "In progress" elseif run.endTime then bits[#bits + 1] = date("%A, %b %d at %H:%M", run.endTime) end
+  if sel.live then bits[#bits + 1] = run.outside and "In progress (you're outside)" or "In progress" elseif run.endTime then bits[#bits + 1] = date("%A, %b %d at %H:%M", run.endTime) end
   if run.loggedBy then bits[#bits + 1] = "Logged by " .. run.loggedBy end
   if run.endReason == "abandoned" then bits[#bits + 1] = "Closed when you logged back in" end
   d.sub:SetText(table.concat(bits, ", "))

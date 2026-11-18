@@ -200,12 +200,15 @@ local function build()
   -- a click (not a drag) opens the run in Foxden: every stat, boss times, the party
   frame:SetScript("OnMouseDown", function(self) self.dragged = false end)
   frame:SetScript("OnMouseUp", function(self, button)
-    if self.dragged or button ~= "LeftButton" then return end
+    if self.dragged then return end
+    if button == "RightButton" then if ns.AskEndRun then ns.AskEndRun() end return end
+    if button ~= "LeftButton" then return end
     if ns.LiveRun() then ns.OpenPage("runs", "live") end
   end)
   frame:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_LEFT")
     GameTooltip:AddLine("Click for the full run summary")
+    GameTooltip:AddLine("Right-click to end the run.", 0.7, 0.72, 0.78)
     GameTooltip:AddLine("Drag to move it.", 0.7, 0.72, 0.78)
     GameTooltip:Show()
   end)

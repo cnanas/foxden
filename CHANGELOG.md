@@ -1,5 +1,9 @@
 # Foxden
 
+## 2.3.1
+
+- **Dying no longer ends the run.** Releasing (or hearthing, or stepping out to a vendor) before the last boss keeps the run going; go back in and it carries on. A run ends at the last boss, when you enter a different dungeon, or when you end it yourself: right-click the run tracker, the **End run** button on the run's page, or `/fox end`.
+
 ## 2.3.0
 
 ### Fixed

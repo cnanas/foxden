@@ -308,6 +308,7 @@ local function checkZone()
   local name, instanceType, _, difficultyName, _, _, _, instanceID = GetInstanceInfo()
   if instanceType == "party" then
     if run and run.instanceID ~= instanceID then finishRun("changed dungeon") end
+    if run and run.outside then run.outside = nil; say("Back in " .. (ns.RunName and ns.RunName(run) or run.dungeon) .. ". The run carries on.") end
     if not run and ns.settings.track then startRun(name, difficultyName, instanceID)
     elseif run then
       -- re-check (a run resumed after /reload may have been judged by an older version)
@@ -316,8 +317,29 @@ local function checkZone()
       if was ~= run._notDungeon and ns.RefreshTracker then ns.RefreshTracker() end
     end
   elseif run then
-    finishRun("left dungeon")
+    -- Outside before the last boss (released after dying, a hearth, a trip to a vendor):
+    -- the run stays open until the last boss dies or you end it. It still ends at the
+    -- door when it's already cleared, when Foxden doesn't know the dungeon's bosses,
+    -- or when nothing was fought yet (that visit isn't saved).
+    local fought = (run.bosses and #run.bosses or 0) > 0 or (run.combatSeconds or 0) >= 20
+    if run.doneAt or run._notDungeon or not fought or ns.RunCleared(run) == nil then
+      finishRun("left dungeon")
+    elseif not run.outside then
+      run.outside = true
+      say("You left " .. (ns.RunName and ns.RunName(run) or run.dungeon) .. " before the last boss, so the run is still going. Go back in to carry on, or right-click the run tracker (or /fox end) to end it.")
+      ns.Changed()
+    end
   end
+end
+
+StaticPopupDialogs["FOXDEN_END_RUN"] = {
+  text = "End this run now?\n\nIt's saved as it is, with the bosses killed so far.",
+  button1 = "End run", button2 = CANCEL or "Cancel",
+  OnAccept = function() finishRun("ended manually") end,
+  timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
+}
+function ns.AskEndRun()
+  if run then StaticPopup_Show("FOXDEN_END_RUN") else say("No run in progress.", true) end
 end
 
 local function onLoad()
