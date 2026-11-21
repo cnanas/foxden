@@ -171,9 +171,14 @@ local r4 = add(UI.Stepper(panel, CONTENT_W, "Keep runs",
   "Older runs are removed from the game's log. Discord keeps everything.",
   { { 25, "Last 25" }, { 50, "Last 50" }, { 100, "Last 100" }, { 250, "Last 250" }, { 0, "All" } },
   get("keep"), function(v) ns.settings.keep = v; if ns.Prune and ns.db then ns.Prune() end; if ns.RefreshUI then ns.RefreshUI() end end), s2, true)
-add(UI.Stepper(panel, CONTENT_W, "Dashboard scale", "Size of everything in the /fox window. Drag its corner to resize the window itself.",
+local rScale = add(UI.Stepper(panel, CONTENT_W, "Dashboard scale", "Size of everything in the /fox window. Drag its corner to resize the window itself.",
   { { 0.8, "80%" }, { 0.9, "90%" }, { 1, "100%" }, { 1.1, "110%" }, { 1.2, "120%" }, { 1.3, "130%" } },
   get("scale"), set("scale")), r4)
+add(UI.Stepper(panel, CONTENT_W, "Window look",
+  "Stone: the game's marble and rock, a warm trim. Stone + art: also a dimmed picture across the top of each section.",
+  { { "art", "Stone + art" }, { "stone", "Stone" }, { "plain", "Plain" } },
+  function() return ns.settings.look or "art" end,
+  function(v) ns.settings.look = v; if ns.ApplyLook then ns.ApplyLook() end; if ns.RefreshUI then ns.RefreshUI() end end), rScale)
 
 function ns.RefreshSettings()
   for _, r in ipairs(rows) do r:Refresh() end

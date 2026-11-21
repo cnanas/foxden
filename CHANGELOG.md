@@ -1,5 +1,19 @@
 # Foxden
 
+## 2.3.9
+
+### A new look
+- **Picture cards everywhere:** Dungeons opens on a grid of dungeon and raid cards with the game's own art (Forever's new dungeons use their loading screens), your quest progress, levels, runs and who wants to run it. Click one to open it; **< All dungeons** goes back.
+- **Home as tiles:** you (XP bar), your trainer, picture cards for the dungeons at your level, guild online with class icons, looking for group and your runs.
+- **Overviews for every section:** Crafting (a card per profession with your skill, crafters and offers), Guild (online now, dungeon night, rares, leveling, and a tile per guildmate online) and Quests (**Your quests**: a card per zone in your log).
+- **A richer sidebar:** you at the top (class icon, level, XP, played time, time this level, gold, item level, rested, runs), each section's pages listed under it, and guild online at the bottom. On narrow windows it becomes a slim icon rail with the tabs on top; the window can now be made smaller.
+- **Window look** (Settings): **Stone + art** (default) uses the game's marble and rock with a warm trim and a dimmed picture across the top of each section; **Stone** without the pictures; **Plain** is the old flat look.
+
+### Fixed
+- Overview tabs that did nothing when clicked.
+- The window opening empty, and Home tiles left blank: round class icons now come from the game's round icon sheet.
+- Stretched zone pictures, and dungeon headers in your quest log now use the dungeon's art.
+
 ## 2.3.8
 
 - **Guildmates' zones on the world map:** everyone online, even without Foxden, as a badge on their zone with how many are there (names and levels on hover). The game only tells addons the zone, not the spot; guildmates who share their location with Foxden are still exact dots. Someone inside a dungeon shows at its entrance. Turn it off in Settings (**Guildmates' zones on the world map**).

@@ -218,6 +218,10 @@ local function matRow(d, i)
 end
 
 function page:Refresh(arg)
+  if type(arg) == "table" and arg.profession then
+    prof, categories, selected, query = arg.profession, {}, nil, ""
+    if self.search.SetText then self.search:SetText("") end
+  end
   if type(arg) == "table" and arg.search then
     query = arg.search:lower(); selected = nil
     self.search:SetText(arg.search)

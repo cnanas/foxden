@@ -359,14 +359,36 @@ function UI.Num(n)
 end
 
 -- A class's icon on a texture (the game's class icon sheet). Returns false for an unknown class.
-function UI.SetClassIcon(tex, class)
+-- round = the game's round class icons (target frames). Never mask these: newer clients error
+-- when a masked texture's tex coords are set.
+function UI.ClassIconSpec(class, round)
   local c = class and CLASS_ICON_TCOORDS and CLASS_ICON_TCOORDS[class]
-  if not c then return false end
-  tex:SetTexture("Interface\\Glues\\CharacterCreate\\UI-CharacterCreate-Classes")
-  -- trim the sheet's border a little
+  if not c then return nil end
+  if round then return { "Interface\\TargetingFrame\\UI-Classes-Circles", c[1], c[2], c[3], c[4] } end
+  -- the square sheet: trim its border a little
   local dx, dy = (c[2] - c[1]) * 0.06, (c[4] - c[3]) * 0.06
-  tex:SetTexCoord(c[1] + dx, c[2] - dx, c[3] + dy, c[4] - dy)
+  return { "Interface\\Glues\\CharacterCreate\\UI-CharacterCreate-Classes", c[1] + dx, c[2] - dx, c[3] + dy, c[4] - dy }
+end
+function UI.SetClassIcon(tex, class, round)
+  local spec = UI.ClassIconSpec(class, round)
+  if not spec then return false end
+  tex:SetTexture(spec[1]); tex:SetTexCoord(spec[2], spec[3], spec[4], spec[5])
   return true
+end
+
+-- Run one part of a page. If it fails, the rest of the page still draws, and the error is said
+-- in chat once (the game hides Lua errors unless you turn them on), so it can be reported.
+local guardSeen = {}
+function UI.Guard(label, fn, ...)
+  local ok, err = pcall(fn, ...)
+  if not ok then
+    local msg = label .. ": " .. tostring(err)
+    if not guardSeen[msg] then
+      guardSeen[msg] = true
+      if ns.say then ns.say("|cffef6b6bSomething went wrong drawing " .. msg .. "|r", true) end
+    end
+  end
+  return ok
 end
 
 function UI.ClassColor(class)

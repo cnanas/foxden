@@ -28,6 +28,7 @@ local function zoneMap(name)
   local e = mapByName[name:lower()]
   return e and e.id
 end
+ns.ZoneMapID = zoneMap -- the quest log overview uses it too
 
 -- 0..1 spot of a zone (its middle) or a map point on the shown map, or nil when it's not on it
 local function onShown(map, x, y, shown)

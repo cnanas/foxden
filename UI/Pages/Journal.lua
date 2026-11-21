@@ -82,6 +82,8 @@ end
 
 -- Dungeons and raids are picked separately (the Dungeons / Raids buttons beside the picker).
 local kind = "dungeon"
+-- The page opens on a grid of picture cards (one per dungeon or raid); clicking one opens it.
+local grid = true
 local function kindOf(e) return e.static and e.static.raid and "raid" or "dungeon" end
 local function listOf(k)
   local out = {}
@@ -532,11 +534,13 @@ function page:Build(f)
       end
     end
   end
+  self.back = UI.Button(f, "< All " .. "dungeons", 120, PICK_H, function() grid = true; self:Refresh() end)
+  self.back:SetPoint("TOPLEFT", 0, 0)
   self.prev = UI.Button(f, "<", 28, PICK_H, function() step(-1) end)
-  self.picker = UI.Dropdown(f, 320, "Dungeon", function(v) selDungeon, selBoss, selFloor, selQuest = v, nil, nil, nil; self:Refresh() end)
+  self.picker = UI.Dropdown(f, 300, "Dungeon", function(v) selDungeon, selBoss, selFloor, selQuest = v, nil, nil, nil; grid = false; self:Refresh() end)
   self.picker:SetHeight(PICK_H)
   self.next = UI.Button(f, ">", 28, PICK_H, function() step(1) end)
-  self.prev:SetPoint("TOPLEFT", 0, 0)
+  self.prev:SetPoint("LEFT", self.back, "RIGHT", 6, 0)
   self.picker:SetPoint("LEFT", self.prev, "RIGHT", 6, 0)
   self.next:SetPoint("LEFT", self.picker, "RIGHT", 6, 0)
   -- Dungeons | Raids
@@ -545,6 +549,7 @@ function page:Build(f)
     local b = UI.Button(f, k[2], 90, PICK_H, function()
       if kind == k[1] then return end
       kind = k[1]; selDungeon, selBoss, selFloor, selQuest = nil, nil, nil, nil
+      grid = true
       self:Refresh()
     end)
     b.kind = k[1]
@@ -786,6 +791,9 @@ function page:Build(f)
   self.runEmpty:SetText("No runs of this dungeon logged yet. Walk in and Foxden records it on its own.")
 
   self.empty = UI.Text(f, 13, C.dim, "CENTER"); self.empty:SetWordWrap(true)
+  -- the grid of dungeon (or raid) cards
+  self.gridScroll, self.gridBody = scrollArea(f)
+  self.gridCards = {}
   self.empty:SetText("No dungeons yet. Run a dungeon and it appears here.")
 end
 
@@ -837,6 +845,10 @@ function page:Layout(w, h)
   self.placeBtn:ClearAllPoints(); self.placeBtn:SetPoint("TOPRIGHT", self.mapPanel, "TOPLEFT", self.mapX + mw, -16)
   self.skipBtn:ClearAllPoints(); self.skipBtn:SetPoint("RIGHT", self.placeBtn, "LEFT", -6, 0)
   self.empty:ClearAllPoints(); self.empty:SetPoint("CENTER"); self.empty:SetWidth(w - 40)
+  -- the grid: even padding all round (PAD), under the Dungeons | Raids buttons
+  local gtop = -(PAD - 4) - PICK_H - PAD -- buttons, then the same gap as the padding
+  self.gridScroll:ClearAllPoints(); self.gridScroll:SetPoint("TOPLEFT", PAD, gtop); self.gridScroll:SetSize(w - PAD * 2, h + gtop - PAD)
+  self.gridBody:SetWidth(w - PAD * 2)
 end
 
 -- ---- refresh: bosses ----------------------------------------------------------------
@@ -1302,6 +1314,73 @@ end
 
 -- ---- refresh ------------------------------------------------------------------------
 
+-- ---- the grid of dungeon / raid cards --------------------------------------------------
+
+local idByName
+local function artOf(e)
+  if not idByName then
+    idByName = {}
+    for id, d in pairs(ns.Dungeons or {}) do idByName[d.name] = id end
+  end
+  local id = idByName[e.name]
+  return id and ns.DungeonArt and ns.DungeonArt[id] or nil
+end
+
+function page:LayoutGrid(list)
+  local w = (self.w or 600) - PAD * 2
+  local cols = w >= 600 and 2 or 1
+  local gap = PAD
+  local cw = math.floor((w - gap * (cols - 1)) / cols)
+  local ch = math.max(96, math.min(150, math.floor(cw * 0.33)))
+  for i, e in ipairs(list) do
+    local c = self.gridCards[i]
+    if not c then
+      c = UI.ArtCard(self.gridBody)
+      c.onClick = function(card)
+        selDungeon, selBoss, selFloor, selQuest = card.entry.name, nil, nil, nil
+        grid = false; jview = "bosses"
+        self:Refresh()
+      end
+      c.onEnter = function(card)
+        local x = card.entry
+        GameTooltip:SetOwner(card, "ANCHOR_RIGHT")
+        GameTooltip:SetText(x.name)
+        local lv = levelsOf(x)
+        if lv then GameTooltip:AddLine((x.static and x.static.raid and "Raid" or "Dungeon") .. ", levels " .. lv, 0.8, 0.8, 0.8) end
+        local nb = #bossesOf(x)
+        if nb > 0 then GameTooltip:AddLine(nb .. (nb == 1 and " boss" or " bosses"), 0.8, 0.8, 0.8) end
+        GameTooltip:AddLine("Click to open: bosses, loot, map, quests and runs", 0.55, 0.85, 0.55)
+        GameTooltip:Show()
+      end
+      self.gridCards[i] = c
+    end
+    c.entry = e
+    local quests = questsOf(e)
+    local done = 0
+    for _, q in ipairs(quests) do if ns.QuestState and ns.QuestState(q[1]) == "done" then done = done + 1 end end
+    local runs = e.stats and e.stats.runs and #e.stats.runs or 0
+    local seekers = ns.LfgFor and ns.LfgFor(ns.Slug(e.name)) or {}
+    local right = {}
+    if runs > 0 then right[#right + 1] = runs .. (runs == 1 and " run" or " runs") end
+    if #seekers > 0 then right[#right + 1] = "|cff8fe3b0" .. #seekers .. " want to run it|r" end
+    local lv = levelsOf(e)
+    c:ClearAllPoints()
+    c:SetPoint("TOPLEFT", ((i - 1) % cols) * (cw + gap), -math.floor((i - 1) / cols) * (ch + gap))
+    c:SetSize(cw, ch)
+    c:Set({
+      art = artOf(e), title = e.name,
+      tag = #quests > 0 and (done .. "/" .. #quests .. " quests") or nil, tagDone = #quests > 0 and done == #quests,
+      bottomLeft = lv and ("LV " .. lv) or nil, bottomRight = table.concat(right, "   "),
+    })
+    c:Show()
+  end
+  for i = #list + 1, #self.gridCards do self.gridCards[i]:Hide() end
+  local rows = math.ceil(#list / cols)
+  self.gridBody:SetHeight(math.max(1, rows * (ch + gap)))
+  local max = math.max(0, rows * (ch + gap) - (self.gridScroll:GetHeight() or 0))
+  if (self.gridScroll:GetVerticalScroll() or 0) > max then self.gridScroll:SetVerticalScroll(max) end
+end
+
 function page:Refresh(arg)
   local list = dungeonList()
   if type(arg) == "table" and arg.dungeon then
@@ -1311,6 +1390,7 @@ function page:Refresh(arg)
       if ns.Slug(x.name) == want then
         selDungeon, selBoss, selFloor, selQuest = x.name, arg.boss, nil, arg.quest
         kind = kindOf(x)
+        grid = false
         showLink, showShared = false, false
         jview = arg.view or "bosses"
       end
@@ -1335,6 +1415,21 @@ function page:Refresh(arg)
   self.picker.value:SetText(selDungeon or "")
 
   local has = e ~= nil
+  -- Dungeons | Raids sit after the picker in a dungeon, at the left above the grid
+  self.kinds[1]:ClearAllPoints()
+  if grid then self.kinds[1]:SetPoint("TOPLEFT", PAD, -PAD + 4) else self.kinds[1]:SetPoint("LEFT", self.next, "RIGHT", 16, 0) end
+  self.gridScroll:SetShown(grid)
+  if grid then
+    for _, el in ipairs({ self.head, self.back, self.prev, self.picker, self.next, self.empty }) do el:Hide() end
+    local panels = { self.mapPanel, self.bossPanel, self.detailPanel, self.qPanel, self.qdPanel, self.runPanel, self.trashPanel }
+    for _, p in ipairs(panels) do p:Hide() end
+    self:LayoutGrid(list)
+    if ns.SetBannerArt then ns.SetBannerArt(nil) end
+    return
+  end
+  if ns.SetBannerArt and e then ns.SetBannerArt(artOf(e)) end
+  self.back.label:SetText(kind == "raid" and "< All raids" or "< All dungeons")
+  self.back:SetShown(has)
   for _, el in ipairs({ self.head, self.prev, self.picker, self.next }) do el:SetShown(has) end
   self.picker.title:SetText(kind == "raid" and "Raid" or "Dungeon")
   self.empty:SetShown(not has)

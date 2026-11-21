@@ -8,8 +8,10 @@ local ADDON, ns = ...
 local UI = ns.UI
 local C = UI.C
 
-local HEADER_H, SIDE_W, PAD, TABS_H = 50, 156, 16, 40
-local MIN_W, MIN_H, MAX_W, MAX_H = 820, 520, 1700, 1100
+local HEADER_H, SIDE_W, PAD, TABS_H = 50, 200, 16, 40
+-- Narrower than this, the sidebar becomes a slim icon rail and the page tabs come back on top.
+local RAIL_W, COMPACT_AT, CHAR_H = 60, 900, 186
+local MIN_W, MIN_H, MAX_W, MAX_H = 720, 520, 1700, 1100
 
 -- ---- registries --------------------------------------------------------------
 
@@ -30,9 +32,9 @@ end
 local NAV = {
   { key = "home", label = "Home", icon = "Interface\\Icons\\Spell_Nature_SpiritWolf", pages = { "overview", "trainer", "wishlist", "notes" } },
   { key = "dungeons", label = "Dungeons", icon = "Interface\\Icons\\INV_Misc_Head_Dragon_01", pages = { "journal", "runs" } },
-  { key = "crafting", label = "Crafting", icon = "Interface\\Icons\\Trade_BlackSmithing", pages = { "recipes", "planner", "crafters", "orders" } },
-  { key = "guild", label = "Guild", icon = "Interface\\Icons\\INV_Shirt_GuildTabard_01", pages = { "roster", "rares", "leveling", "players" } },
-  { key = "questing", label = "Quests", icon = "Interface\\Icons\\INV_Misc_Book_08", pages = { "quests" } },
+  { key = "crafting", label = "Crafting", icon = "Interface\\Icons\\Trade_BlackSmithing", pages = { "craftoverview", "recipes", "planner", "crafters", "orders" } },
+  { key = "guild", label = "Guild", icon = "Interface\\Icons\\INV_Shirt_GuildTabard_01", pages = { "guildoverview", "roster", "rares", "leveling", "players" } },
+  { key = "questing", label = "Quests", icon = "Interface\\Icons\\INV_Misc_Book_08", pages = { "questlog", "quests" } },
 }
 local function groupOf(key)
   for _, g in ipairs(NAV) do
@@ -87,14 +89,19 @@ end
 
 local W, current, ticker, layoutTimer
 local navButtons = {}
+local subButtons = {}
+local compact = false
+local navGroup, navPage -- what the sidebar shows as open
 
 local function savePlace()
   local point, _, rel, x, y = W:GetPoint()
   ns.settings.window = { w = math.floor(W:GetWidth()), h = math.floor(W:GetHeight()), point = point, rel = rel, x = x, y = y }
 end
 
+local applyMode -- below
 local function layout()
   layoutTimer = nil
+  if applyMode then applyMode() end
   if not current or not current.frame then return end
   local w, h = W.content:GetWidth(), W.content:GetHeight()
   if current.Layout then
@@ -152,12 +159,8 @@ function ns.ShowSettingsInWindow()
   settingsHost:SetAllPoints(W.content)
   root:SetParent(settingsHost); root:ClearAllPoints(); root:SetAllPoints(settingsHost)
   settingsHost:Show(); root:Show()
-  for _, b in ipairs(navButtons) do
-    b.sel:Hide(); b.bar:Hide(); b.icon:SetDesaturated(true); b.icon:SetAlpha(0.7); b.text:SetTextColor(unpack(C.dim))
-  end
-  drawTabs({ pages = {} }, nil)
-  W.tabTitle = W.tabTitle or UI.Text(W.tabs, 13, C.text)
-  W.tabTitle:ClearAllPoints(); W.tabTitle:SetPoint("BOTTOMLEFT", PAD + 10, 13); W.tabTitle:SetText("Settings"); W.tabTitle:Show()
+  navGroup, navPage = nil, nil
+  if ns.DrawNav then UI.Guard("the sidebar", ns.DrawNav) end
   if ns.RefreshSettings then ns.RefreshSettings() end
 end
 function ns.InWindowSettings() return settingsHost ~= nil and settingsHost:IsShown() end
@@ -170,7 +173,11 @@ function ns.OpenPage(key, arg)
   local group, pkey = groupOf(key)
   if not group then return end
   ns.settings.tabs = ns.settings.tabs or {}
-  if key == group.key then pkey = ns.settings.tabs[group.key] or pkey end
+  if key == group.key then
+    -- the tab you used last in this section, if it's still one of its tabs
+    local last = ns.settings.tabs[group.key]
+    for _, p in ipairs(group.pages) do if p == last then pkey = last end end
+  end
   local page
   for _, p in ipairs(ns.pages) do if p.key == pkey then page = p end end
   if not page then return end
@@ -187,13 +194,9 @@ function ns.OpenPage(key, arg)
   page.frame:Show()
   ns.settings.page = pkey
   ns.settings.tabs[group.key] = pkey
-  for _, b in ipairs(navButtons) do
-    local on = b.key == group.key
-    b.sel:SetShown(on); b.bar:SetShown(on)
-    b.icon:SetDesaturated(not on); b.icon:SetAlpha(on and 1 or 0.7)
-    if on then b.bar:SetColorTexture(UI.Accent()); b.text:SetTextColor(unpack(C.text)) else b.text:SetTextColor(unpack(C.dim)) end
-  end
-  drawTabs(group, pkey)
+  navGroup, navPage = group, pkey
+  if ns.DrawNav then UI.Guard("the sidebar", ns.DrawNav) end
+  if ns.SetSectionArt then UI.Guard("the window look", ns.SetSectionArt, group.key) end
   layout()
   refresh(arg)
 end
@@ -247,29 +250,239 @@ local function build()
   local hl = header:CreateTexture(nil, "BORDER")
   hl:SetColorTexture(unpack(C.line)); hl:SetPoint("BOTTOMLEFT"); hl:SetPoint("BOTTOMRIGHT"); hl:SetHeight(1)
 
-  -- sidebar
+  -- sidebar: you at the top, the places (the open one lists its pages), guild online at the bottom
   local side = CreateFrame("Frame", nil, W)
   side:SetPoint("TOPLEFT", 0, -HEADER_H - 1); side:SetPoint("BOTTOMLEFT", 0, 1); side:SetWidth(SIDE_W)
   UI.Fill(side, { 0, 0, 0, 0.18 })
+  W.side = side
   local div = W:CreateTexture(nil, "BORDER")
   div:SetColorTexture(unpack(C.line)); div:SetPoint("TOPLEFT", side, "TOPRIGHT"); div:SetPoint("BOTTOMLEFT", side, "BOTTOMRIGHT"); div:SetWidth(1)
-  local y = -12
+
+  -- you
+  local me = CreateFrame("Button", nil, side)
+  me:SetPoint("TOPLEFT", 0, 0); me:SetPoint("TOPRIGHT", 0, 0); me:SetHeight(CHAR_H)
+  UI.Fill(me, C.hover, "HIGHLIGHT")
+  me.icon = me:CreateTexture(nil, "ARTWORK"); me.icon:SetSize(38, 38)
+  me.name = UI.Text(me, 15); me.sub = UI.Text(me, 11, C.dim)
+  me.bar = CreateFrame("StatusBar", nil, me); me.bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8"); me.bar:SetHeight(4)
+  -- stats: two columns, three rows
+  me.stats = {}
+  for i = 1, 6 do
+    local cell = { label = UI.Text(me, 10, C.faint), value = UI.Text(me, 13, C.text) }
+    me.stats[i] = cell
+  end
+  me.barBg = me.bar:CreateTexture(nil, "BACKGROUND"); me.barBg:SetAllPoints(); me.barBg:SetColorTexture(1, 1, 1, 0.08)
+  me:SetScript("OnClick", function() ns.OpenPage("leveling") end)
+  me:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText(UnitName("player") or "")
+    local xp, mx = UnitXP("player") or 0, UnitXPMax("player") or 1
+    GameTooltip:AddLine(string.format("%s / %s XP (%d%%)", ns.Commas and ns.Commas(xp) or xp, ns.Commas and ns.Commas(mx) or mx, math.floor(xp / math.max(1, mx) * 100)), 1, 1, 1)
+    local rest = GetXPExhaustion and GetXPExhaustion()
+    if rest and rest > 0 then GameTooltip:AddLine((ns.Commas and ns.Commas(rest) or rest) .. " rested", 0.45, 0.65, 1) end
+    GameTooltip:AddLine("Click: your leveling", 0.55, 0.85, 0.55)
+    GameTooltip:Show()
+  end)
+  me:SetScript("OnLeave", GameTooltip_Hide)
+  local meLine = side:CreateTexture(nil, "BORDER"); meLine:SetColorTexture(unpack(C.line)); meLine:SetHeight(1)
+  meLine:SetPoint("TOPLEFT", me, "BOTTOMLEFT", 12, 0); meLine:SetPoint("TOPRIGHT", me, "BOTTOMRIGHT", -12, 0)
+  W.me = me
+  function ns.RefreshSidebarMe()
+    local _, class = UnitClass("player")
+    local r, g, b = UI.ClassColor(class)
+    if not UI.SetClassIcon(me.icon, class, true) then me.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark"); me.icon:SetTexCoord(0, 1, 0, 1) end
+    me.name:SetText(UnitName("player") or ""); me.name:SetTextColor(r, g, b)
+    local xp, mx = UnitXP("player") or 0, UnitXPMax("player") or 1
+    local maxed = GetMaxPlayerLevel and (UnitLevel("player") or 0) >= GetMaxPlayerLevel()
+    me.bar:SetMinMaxValues(0, math.max(1, mx)); me.bar:SetValue(maxed and mx or xp); me.bar:SetStatusBarColor(r, g, b, 0.9)
+    me.sub:SetText("Level " .. (UnitLevel("player") or "?") .. " " .. (UI.ClassName and UI.ClassName(class) or "")
+      .. (maxed and "" or ("  ·  " .. math.floor(xp / math.max(1, mx) * 100) .. "%")))
+
+    -- stats
+    local function span(s)
+      if not s then return "—" end
+      s = math.floor(s)
+      local d, h, m = math.floor(s / 86400), math.floor((s % 86400) / 3600), math.floor((s % 3600) / 60)
+      if d > 0 then return d .. "d " .. h .. "h" end
+      if h > 0 then return h .. "h " .. m .. "m" end
+      return m .. "m"
+    end
+    local total, thisLevel = nil, nil
+    if ns.Played then total, thisLevel = ns.Played() end
+    local money = GetMoney and GetMoney() or 0
+    local gold = math.floor(money / 10000)
+    -- average item level of what you're wearing (shirt and tabard left out)
+    local sum, n = 0, 0
+    for slot = 1, 18 do
+      if slot ~= 4 then
+        local link = GetInventoryItemLink and GetInventoryItemLink("player", slot)
+        if link then
+          local lvl = (C_Item and C_Item.GetDetailedItemLevelInfo and C_Item.GetDetailedItemLevelInfo(link))
+            or (GetDetailedItemLevelInfo and GetDetailedItemLevelInfo(link)) or select(4, GetItemInfo(link))
+          if type(lvl) == "number" and lvl > 0 then sum, n = sum + lvl, n + 1 end
+        end
+      end
+    end
+    local rest = GetXPExhaustion and GetXPExhaustion() or 0
+    local runs = ns.GetRuns and #ns.GetRuns() or 0
+    local cells = {
+      { "Played", span(total) },
+      { "This level", maxed and "max" or span(thisLevel) },
+      { "Gold", (ns.Commas and ns.Commas(gold) or gold) .. "g" },
+      { "Item level", n > 0 and string.format("%d", math.floor(sum / n + 0.5)) or "—" },
+      { "Rested", maxed and "—" or (math.floor((rest or 0) / math.max(1, mx) * 100) .. "%") },
+      { "Runs", tostring(runs) },
+    }
+    for i, cell in ipairs(me.stats) do
+      cell.label:SetText(cells[i][1]); cell.value:SetText(cells[i][2])
+    end
+    if (rest or 0) > 0 and not maxed then me.stats[5].value:SetTextColor(0.45, 0.65, 1) else me.stats[5].value:SetTextColor(unpack(C.text)) end
+    me.stats[3].value:SetTextColor(0.91, 0.76, 0.35)
+  end
+
+  -- places
   for _, g in ipairs(NAV) do
     local b = CreateFrame("Button", nil, side)
     b.key = g.key
-    b:SetPoint("TOPLEFT", 8, y); b:SetPoint("RIGHT", side, "RIGHT", -8, 0); b:SetHeight(40)
+    b:SetHeight(36)
     b.sel = UI.Fill(b, C.raised); b.sel:Hide()
     b.bar = b:CreateTexture(nil, "ARTWORK"); b.bar:SetPoint("TOPLEFT"); b.bar:SetPoint("BOTTOMLEFT"); b.bar:SetWidth(2); b.bar:Hide()
     local hover = UI.Fill(b, C.hover, "ARTWORK"); hover:Hide()
-    b.icon = b:CreateTexture(nil, "OVERLAY"); b.icon:SetSize(20, 20); b.icon:SetPoint("LEFT", 12, 0)
+    b.icon = b:CreateTexture(nil, "OVERLAY"); b.icon:SetSize(20, 20)
     b.icon:SetTexture(g.icon); b.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-    b.text = UI.Text(b, 14, C.dim); b.text:SetPoint("LEFT", 42, 0); b.text:SetText(g.label)
-    b:SetScript("OnEnter", function() hover:Show() end)
-    b:SetScript("OnLeave", function() hover:Hide() end)
+    b.text = UI.Text(b, 14, C.dim); b.text:SetText(g.label)
+    b:SetScript("OnEnter", function(self)
+      hover:Show()
+      if compact then GameTooltip:SetOwner(self, "ANCHOR_RIGHT"); GameTooltip:SetText(g.label); GameTooltip:Show() end
+    end)
+    b:SetScript("OnLeave", function() hover:Hide(); GameTooltip:Hide() end)
     b:SetScript("OnClick", function() ns.OpenPage(g.key) end)
     navButtons[#navButtons + 1] = b
-    y = y - 44
   end
+
+  -- guild online, at the bottom
+  local foot = CreateFrame("Button", nil, side)
+  foot:SetPoint("BOTTOMLEFT", 0, 0); foot:SetPoint("BOTTOMRIGHT", 0, 0); foot:SetHeight(52)
+  UI.Fill(foot, C.hover, "HIGHLIGHT")
+  local footLine = side:CreateTexture(nil, "BORDER"); footLine:SetColorTexture(unpack(C.line)); footLine:SetHeight(1)
+  footLine:SetPoint("BOTTOMLEFT", foot, "TOPLEFT", 12, 0); footLine:SetPoint("BOTTOMRIGHT", foot, "TOPRIGHT", -12, 0)
+  foot.dot = foot:CreateTexture(nil, "ARTWORK"); foot.dot:SetSize(8, 8); foot.dot:SetColorTexture(0.30, 0.78, 0.56, 1)
+  pcall(foot.dot.SetMask, foot.dot, "Interface\\CharacterFrame\\TempPortraitAlphaMask")
+  foot.text = UI.Text(foot, 12, C.text); foot.ver = UI.Text(foot, 10, C.faint)
+  local meta = C_AddOns and C_AddOns.GetAddOnMetadata or GetAddOnMetadata
+  foot.ver:SetText("Foxden " .. ((meta and meta("Foxden", "Version")) or ""))
+  foot:SetScript("OnClick", function() ns.OpenPage("roster") end)
+  foot:SetScript("OnEnter", function(self) GameTooltip:SetOwner(self, "ANCHOR_RIGHT"); GameTooltip:SetText("Guild roster"); GameTooltip:Show() end)
+  foot:SetScript("OnLeave", GameTooltip_Hide)
+  W.foot = foot
+  function ns.RefreshSidebarFoot()
+    local members = ns.db and ns.db.roster and ns.db.roster.members or {}
+    local online = 0
+    for _, m in ipairs(members) do if m.online then online = online + 1 end end
+    foot.text:SetText(#members > 0 and (compact and tostring(online) or (online .. " of " .. #members .. " online")) or (compact and "" or "Guild"))
+  end
+
+  -- draws the sidebar for the open place and page (and the tab row, in the narrow layout)
+  function ns.DrawNav()
+    local w = compact and RAIL_W or SIDE_W
+    side:SetWidth(w)
+    -- you
+    me:SetHeight(compact and 60 or CHAR_H)
+    me.icon:ClearAllPoints()
+    if compact then me.icon:SetPoint("CENTER", 0, 0) else me.icon:SetPoint("TOPLEFT", 16, -16) end
+    me.name:SetShown(not compact); me.sub:SetShown(not compact)
+    me.name:ClearAllPoints(); me.name:SetPoint("TOPLEFT", me.icon, "TOPRIGHT", 10, -1); me.name:SetPoint("RIGHT", me, "RIGHT", -10, 0)
+    me.sub:ClearAllPoints(); me.sub:SetPoint("TOPLEFT", me.name, "BOTTOMLEFT", 0, -4)
+    me.bar:ClearAllPoints()
+    if compact then me.bar:SetPoint("BOTTOMLEFT", 10, 4); me.bar:SetPoint("BOTTOMRIGHT", -10, 4)
+    else me.bar:SetPoint("TOPLEFT", 16, -64); me.bar:SetPoint("TOPRIGHT", -16, -64) end
+    local colW = (SIDE_W - 32) / 2
+    for i, cell in ipairs(me.stats) do
+      local col, row = (i - 1) % 2, math.floor((i - 1) / 2)
+      cell.label:ClearAllPoints(); cell.value:ClearAllPoints()
+      cell.label:SetPoint("TOPLEFT", me, "TOPLEFT", 16 + col * colW, -80 - row * 34)
+      cell.value:SetPoint("TOPLEFT", cell.label, "BOTTOMLEFT", 0, -3)
+      cell.label:SetShown(not compact); cell.value:SetShown(not compact)
+    end
+    UI.Guard("the sidebar (you)", ns.RefreshSidebarMe)
+
+    -- places, the open one with its pages under it
+    local r, g, b = UI.Accent()
+    local y = -(compact and 60 or CHAR_H) - 10
+    local used = 0
+    for i, btn in ipairs(navButtons) do
+      local grp = NAV[i]
+      local on = navGroup ~= nil and grp.key == navGroup.key
+      btn:ClearAllPoints(); btn:SetPoint("TOPLEFT", 8, y); btn:SetPoint("RIGHT", side, "RIGHT", -8, 0)
+      btn.icon:ClearAllPoints()
+      if compact then btn.icon:SetPoint("CENTER") else btn.icon:SetPoint("LEFT", 12, 0) end
+      btn.text:ClearAllPoints(); btn.text:SetPoint("LEFT", 42, 0); btn.text:SetShown(not compact)
+      btn.sel:SetShown(on); btn.bar:SetShown(on)
+      btn.icon:SetDesaturated(not on); btn.icon:SetAlpha(on and 1 or 0.7)
+      if on then btn.bar:SetColorTexture(r, g, b, 1); btn.text:SetTextColor(unpack(C.text)) else btn.text:SetTextColor(unpack(C.dim)) end
+      y = y - 38
+      if on and not compact then
+        for _, pkey in ipairs(grp.pages) do
+          local page
+          for _, p in ipairs(ns.pages) do if p.key == pkey then page = p end end
+          if page then
+            used = used + 1
+            local sb = subButtons[used]
+            if not sb then
+              sb = CreateFrame("Button", nil, side)
+              sb:SetHeight(26)
+              sb.hl = UI.Fill(sb, C.hover, "HIGHLIGHT")
+              sb.dot = sb:CreateTexture(nil, "ARTWORK"); sb.dot:SetSize(4, 4); sb.dot:SetPoint("LEFT", 0, 0)
+              sb.text = UI.Text(sb, 12, C.dim); sb.text:SetPoint("LEFT", 12, 0)
+              sb:SetScript("OnClick", function(self) ns.OpenPage(self.key) end)
+              subButtons[used] = sb
+            end
+            sb.key = pkey
+            local cur = pkey == navPage
+            sb:ClearAllPoints(); sb:SetPoint("TOPLEFT", 40, y); sb:SetPoint("RIGHT", side, "RIGHT", -8, 0)
+            sb.text:SetText(page.label)
+            if cur then sb.text:SetTextColor(r, g, b); sb.dot:SetColorTexture(r, g, b, 1); sb.dot:Show()
+            else sb.text:SetTextColor(unpack(C.dim)); sb.dot:Hide() end
+            sb:Show()
+            y = y - 26
+          end
+        end
+        y = y - 8
+      end
+    end
+    for i = used + 1, #subButtons do subButtons[i]:Hide() end
+
+    -- guild online
+    foot:SetHeight(compact and 40 or 52)
+    foot.dot:ClearAllPoints(); foot.text:ClearAllPoints(); foot.ver:ClearAllPoints()
+    if compact then
+      foot.dot:SetPoint("TOP", -8, -12); foot.text:SetPoint("LEFT", foot.dot, "RIGHT", 4, 0); foot.ver:Hide()
+    else
+      foot.dot:SetPoint("TOPLEFT", 18, -14); foot.text:SetPoint("LEFT", foot.dot, "RIGHT", 8, 0)
+      foot.ver:SetPoint("TOPLEFT", 16, -32); foot.ver:Show()
+    end
+    UI.Guard("the sidebar (guild online)", ns.RefreshSidebarFoot)
+
+    -- the tab row: only in the narrow layout (the sidebar lists the pages otherwise)
+    W.tabs:SetHeight(compact and TABS_H or 1)
+    if compact and navGroup then drawTabs(navGroup, navPage) else drawTabs({ pages = {} }, nil) end
+    if W.tabTitle then W.tabTitle:Hide() end
+  end
+
+  -- narrow window: the slim layout
+  applyMode = function()
+    local want = (W:GetWidth() or 1000) < COMPACT_AT
+    if want ~= compact then compact = want; UI.Guard("the sidebar", ns.DrawNav) end
+  end
+  side:RegisterEvent("PLAYER_XP_UPDATE"); side:RegisterEvent("PLAYER_LEVEL_UP"); side:RegisterEvent("GUILD_ROSTER_UPDATE")
+  side:RegisterEvent("PLAYER_MONEY"); side:RegisterEvent("PLAYER_EQUIPMENT_CHANGED"); side:RegisterEvent("UPDATE_EXHAUSTION")
+  -- played time counts on: once a minute while the window is open
+  C_Timer.NewTicker(60, function() if W:IsShown() then UI.Guard("the sidebar (you)", ns.RefreshSidebarMe) end end)
+  side:SetScript("OnEvent", function(_, ev)
+    if not W:IsShown() then return end
+    if ev == "GUILD_ROSTER_UPDATE" then C_Timer.After(1.2, function() UI.Guard("the sidebar (guild online)", ns.RefreshSidebarFoot) end)
+    else UI.Guard("the sidebar (you)", ns.RefreshSidebarMe) end
+  end)
 
   -- content
   W.tabs = CreateFrame("Frame", nil, W)
@@ -279,6 +492,7 @@ local function build()
   W.content = CreateFrame("Frame", nil, W)
   W.content:SetPoint("TOPLEFT", W.tabs, "BOTTOMLEFT", 0, 0)
   W.content:SetPoint("BOTTOMRIGHT", 0, 1)
+  if ns.BuildLook then UI.Guard("the window look", ns.BuildLook, W, header, side) end
 
   -- resize grip
   local grip = CreateFrame("Button", nil, W)

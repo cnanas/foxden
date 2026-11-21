@@ -49,6 +49,14 @@ local function statNow()
 end
 local before -- stats at the start of this level, so gains can be worked out if the event doesn't say
 
+-- /played now: total and this level (seconds), counted on from the server's last answer
+function ns.Played()
+  local m = db and db.levels and db.levels[ns.CharKey()]
+  if not (m and m.played and m.playedAt) then return nil end
+  local since = math.max(0, GetServerTime() - m.playedAt)
+  return m.played + since, m.playedLevel and (m.playedLevel + since) or nil
+end
+
 function ns.LevelHistory(charKey)
   return db and db.levels and db.levels[charKey or ns.CharKey()]
 end
@@ -97,6 +105,9 @@ local function onPlayed(total, thisLevel)
   C_Timer.After(0, unmute) -- chat listens again once everyone has seen this answer
   if type(total) ~= "number" or ns.IsSecret(total) then return end
   local m = me()
+  -- kept for the sidebar: total and this level's /played, and when the server said so
+  m.played, m.playedLevel, m.playedAt = total, type(thisLevel) == "number" and thisLevel or nil, GetServerTime()
+  if ns.RefreshSidebarMe then pcall(ns.RefreshSidebarMe) end
   if waiting then
     local w = waiting
     waiting = nil
