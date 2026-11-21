@@ -203,6 +203,87 @@ function UI.Toggle(parent, width, title, desc, get, set)
   return row
 end
 
+-- Key picker for a game binding. Click, then press a key (with Shift/Ctrl/Alt
+-- if wanted) or a mouse button 3-5. Escape cancels, right-click clears.
+local MODIFIER_KEYS = { LSHIFT = true, RSHIFT = true, LCTRL = true, RCTRL = true, LALT = true, RALT = true,
+  LMETA = true, RMETA = true, UNKNOWN = true }
+local MOUSE_KEYS = { MiddleButton = "BUTTON3", Button4 = "BUTTON4", Button5 = "BUTTON5" }
+
+function UI.KeyBind(parent, width, title, desc, command)
+  local row = settingRow(parent, width, title, desc)
+  local b = UI.Button(row, "", 132, 24)
+  b:SetPoint("RIGHT")
+  b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+  local listening = false
+
+  local function current() return GetBindingKey and GetBindingKey(command) end
+  function row:Refresh()
+    if listening then b.label:SetText("Press a key...") return end
+    local key = current()
+    b.label:SetText(key and (GetBindingText and GetBindingText(key) or key) or "Not set")
+    b.label:SetTextColor(unpack(key and UI.C.text or UI.C.dim))
+  end
+  local function stop()
+    listening = false
+    b:EnableKeyboard(false)
+    row:Refresh()
+  end
+  local function save()
+    if SaveBindings then SaveBindings(GetCurrentBindingSet and GetCurrentBindingSet() or 1) end
+  end
+  local function clear()
+    for _, k in ipairs({ GetBindingKey(command) }) do SetBinding(k) end
+  end
+  local function bind(key)
+    if InCombatLockdown and InCombatLockdown() then
+      if ns.say then ns.say("Can't change keys in combat.", true) end
+      return stop()
+    end
+    local mods = (IsAltKeyDown() and "ALT-" or "") .. (IsControlKeyDown() and "CTRL-" or "")
+      .. (IsShiftKeyDown() and "SHIFT-" or "") .. ((IsMetaKeyDown and IsMetaKeyDown()) and "META-" or "")
+    local full = mods .. key
+    local was = GetBindingAction and GetBindingAction(full)
+    clear()
+    if SetBinding(full, command) then
+      save()
+      if was and was ~= "" and was ~= command and ns.say then
+        ns.say(full .. " was \"" .. (GetBindingName and GetBindingName(was) or was) .. "\" before; that action is now unbound.", true)
+      end
+    end
+    stop()
+  end
+
+  b:SetScript("OnClick", function(_, mouse)
+    if listening then return end
+    if mouse == "RightButton" then
+      if not (InCombatLockdown and InCombatLockdown()) then clear(); save() end
+      return row:Refresh()
+    end
+    listening = true
+    b:EnableKeyboard(true)
+    if b.SetPropagateKeyboardInput then b:SetPropagateKeyboardInput(false) end
+    row:Refresh()
+  end)
+  b:SetScript("OnKeyDown", function(_, key)
+    if MODIFIER_KEYS[key] then return end
+    if key == "ESCAPE" then return stop() end
+    bind(key)
+  end)
+  b:SetScript("OnMouseDown", function(_, mouse)
+    if listening and MOUSE_KEYS[mouse] then bind(MOUSE_KEYS[mouse]) end
+  end)
+  b:HookScript("OnHide", function() if listening then stop() end end)
+  b:HookScript("OnEnter", function(s)
+    GameTooltip:SetOwner(s, "ANCHOR_TOP")
+    GameTooltip:SetText(title)
+    GameTooltip:AddLine("Click, then press a key. Escape cancels. Right-click clears.", 0.6, 0.63, 0.69, true)
+    GameTooltip:Show()
+  end)
+  b:HookScript("OnLeave", GameTooltip_Hide)
+  row:Refresh()
+  return row
+end
+
 -- Pick one of a list of values with < and > arrows.
 -- values = { {value, "label"}, ... }
 function UI.Stepper(parent, width, title, desc, values, get, set)

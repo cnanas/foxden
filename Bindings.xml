@@ -5,4 +5,6 @@
 	<Binding name="FOXDEN_OPENITEM" category="ADDONS">
 		Foxden_OpenHoveredItem()
 	</Binding>
+	<Binding name="CLICK FoxdenFishButton:LeftButton" category="ADDONS">
+	</Binding>
 </Bindings>

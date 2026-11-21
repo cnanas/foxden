@@ -142,7 +142,11 @@ local rL = add(UI.Toggle(panel, CONTENT_W, "Share my location with the guild",
     if ns.RefreshUI then ns.RefreshUI() end
   end), rO)
 
-local s2 = section("History and window", rL)
+local sK = section("Keys", rL)
+local rK = add(UI.KeyBind(panel, CONTENT_W, "Fishing key",
+  "Press it to cast Fishing. Also in the game's Key Bindings under AddOns > Foxden.", ns.FISH_BINDING), sK, true)
+
+local s2 = section("History and window", rK)
 local r4 = add(UI.Stepper(panel, CONTENT_W, "Keep runs",
   "Older runs are removed from the game's log. Discord keeps everything.",
   { { 25, "Last 25" }, { 50, "Last 50" }, { 100, "Last 100" }, { 250, "Last 250" }, { 0, "All" } },

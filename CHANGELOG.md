@@ -1,5 +1,9 @@
 # Foxden
 
+## 2.3.4
+
+- **Fishing key:** one key that casts Fishing. Set it in **Settings → Keys → Fishing key** (or the game's Key Bindings under AddOns → Foxden). It starts unbound, so nothing changes until you pick a key. You still press it for every cast.
+
 ## 2.3.3
 
 - **No more "No player named '…-' is currently playing" spam.** When Foxden passed a run to a guildmate for the website, it could address them with an empty realm ("Foxwarrior-"), which the server rejects, once per piece of the run. It now whispers the plain name. Same fix for the whisper Foxden sends when you ask a crafter to make something.
