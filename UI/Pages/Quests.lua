@@ -15,7 +15,9 @@ local function changed()
   if ns.RefreshMapPins then ns.RefreshMapPins() end
   if ns.RefreshMinimapPins then ns.RefreshMinimapPins() end
   if ns.RefreshQuestTracker then ns.RefreshQuestTracker() end
+  if ns.ApplyGameTracker then ns.ApplyGameTracker() end
 end
+ns.QuestSettingsChanged = changed -- the main Settings page has the on/off switches too
 local function get(k) return function() return ns.settings[k] end end
 local function set(k, after) return function(v) ns.settings[k] = v; changed(); if after then after(v) end end end
 
@@ -81,10 +83,10 @@ function page:Build(f)
 
   section("Quest tracker")
   add(UI.Toggle(b, ROW_W, "Show the quest tracker",
-    "Grouped by zone. Click: map. Right-click: pin the turn-in.",
+    "Grouped by zone. Click: map. Right-click: pin the turn-in. Off: the game's own tracker comes back.",
     get("questTracker"), set("questTracker")))
   add(UI.Toggle(b, ROW_W, "Hide the game's quest tracker",
-    "Also EllesmereUI's. Questie's is off in Questie's settings.",
+    "While Foxden's is on. Also EllesmereUI's. Questie's is off in Questie's settings.",
     get("hideGameTracker"), set("hideGameTracker", function() if ns.ApplyGameTracker then ns.ApplyGameTracker() end end)))
   add(UI.Toggle(b, ROW_W, "Quest item buttons", "Click to use a quest's item, beside the quest.",
     get("questTrackerItems"), set("questTrackerItems")))

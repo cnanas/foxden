@@ -1,5 +1,11 @@
 # Foxden
 
+## 2.3.5
+
+- **Auction prices anywhere:** item tooltips show what the item goes for on the auction house ("Auction: 1g 20s (14 listed)"), wherever you are, not just at the auctioneer. `/fox price <item>` does the same: shift-click the item into chat or type its name. The prices come from your guild website, refreshed daily, and arrive with the website data (the companion app). Turn it off in Settings (**Auction prices in tooltips**).
+- **Quest switches in Settings:** **Quest tracker** turns Foxden's quest list at the side of the screen off, and **Quest marks** turns off every ! and ? on the map and minimap at once.
+- **The game's quest tracker comes back** when Foxden's is off. Before, hiding the game's tracker stayed on and left you with none.
+
 ## 2.3.4
 
 - **Fishing key:** one key that casts Fishing. Set it in **Settings → Keys → Fishing key** (or the game's Key Bindings under AddOns → Foxden). It starts unbound, so nothing changes until you pick a key. You still press it for every cast.

@@ -12,7 +12,7 @@ ns.SCHEMA = 3
 
 ns.DEFAULTS = { track = true, chat = true, remind = true, sendNow = true, keep = 100, scale = 1, share = true, offer = false, shareLocation = true, welcomed = false, copyPopup = true, runSummary = true, levelCard = true, shareLevelUps = true, guildDings = true, learnAll = true, levelScreenshot = false, tracker = true, minimapButton = true, rareAlerts = true, questPins = true, questPinsAll = true, questMinimap = true, questTracker = true, hideGameTracker = true,
   questAhead = 3, questShowGrey = false, questMarkSize = 18, questTrackerFont = 12, questTrackerWidth = 270, questTrackerBg = 0.45,
-  questTrackerLocked = false, questShowDoneObj = true, questTrackerItems = true, itemSource = true, entrancePins = true }
+  questTrackerLocked = false, questShowDoneObj = true, questTrackerItems = true, itemSource = true, auctionPrices = true, entrancePins = true }
 ns.settings = setmetatable({}, { __index = ns.DEFAULTS }) -- replaced at load
 
 local db, run
@@ -564,6 +564,6 @@ SlashCmdList.FOXDEN = function(msg)
       if ok and text then say(text, true) end
     end
   else
-    say("/fox (dashboard) · /fox options · /fox status · /fox end · /fox send · /fox summary · /fox copy · /fox note · /fox trainer · /fox levelup · /fox maptest · /fox journaltest · /fox welcome", true)
+    say("/fox (dashboard) · /fox options · /fox price <item> · /fox status · /fox end · /fox send · /fox summary · /fox copy · /fox note · /fox trainer · /fox levelup · /fox maptest · /fox journaltest · /fox welcome", true)
   end
 end

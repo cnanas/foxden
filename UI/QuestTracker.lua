@@ -474,7 +474,11 @@ local vault, moved, hooked = nil, {}, false
 local function hideOTF(otf)
   if InCombatLockdown() then otf:SetAlpha(0) else otf:SetAlpha(1); otf:Hide() end
 end
-local function wantHidden() return settings().hideGameTracker and true or false end
+-- only while Foxden's own tracker is on: turning ours off brings the game's back
+local function wantHidden()
+  local s = settings()
+  return (s.hideGameTracker and s.questTracker ~= false) and true or false
+end
 
 function ns.ApplyGameTracker()
   local hide = wantHidden()

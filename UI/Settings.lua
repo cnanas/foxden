@@ -101,7 +101,9 @@ local r7 = add(UI.Toggle(panel, CONTENT_W, "Rare alerts",
   "Tell guildmates when you find a rare, and show a note when they find one.", get("rareAlerts"), set("rareAlerts")), r6)
 local r7b = add(UI.Toggle(panel, CONTENT_W, "Item sources in tooltips",
   "Which boss or quest an item comes from, at the bottom of its tooltip.", get("itemSource"), set("itemSource")), r7)
-local sQ = section("Quests", r7b)
+local r7c = add(UI.Toggle(panel, CONTENT_W, "Auction prices in tooltips",
+  "What it sells for on the auction house, anywhere in the world. From the guild website, refreshed daily. Also /fox price <item>.", get("auctionPrices"), set("auctionPrices")), r7b)
+local sQ = section("Quests", r7c)
 -- the quest helper has its own page in the Foxden window
 local r8 = CreateFrame("Frame", nil, panel); r8:SetSize(CONTENT_W, 44); r8.Refresh = function() end
 local r8b = UI.Button(r8, "Open the Quests page", 180, 26, function() if ns.OpenPage then ns.OpenPage("quests") end end)
@@ -109,8 +111,21 @@ r8b:SetPoint("LEFT", 0, 0)
 local r8t = UI.Text(r8, 11, C.dim); r8t:SetPoint("LEFT", r8b, "RIGHT", 12, 0)
 r8t:SetText("Map and minimap marks, the quest tracker")
 add(r8, sQ, true)
+local function questChanged() if ns.QuestSettingsChanged then ns.QuestSettingsChanged() end end
+local rQ1 = add(UI.Toggle(panel, CONTENT_W, "Quest tracker",
+  "Foxden's quest list at the side of the screen. Off: the game's own tracker comes back.",
+  function() return ns.settings.questTracker ~= false end,
+  function(v) ns.settings.questTracker = v; questChanged() end), r8)
+local QUEST_MARKS = { "questPinsAll", "questPins", "questMinimap" }
+local rQ2 = add(UI.Toggle(panel, CONTENT_W, "Quest marks",
+  "The ! and ? on the world map and minimap. Pick which ones on the Quests page.",
+  function()
+    for _, k in ipairs(QUEST_MARKS) do if ns.settings[k] ~= false then return true end end
+    return false
+  end,
+  function(v) for _, k in ipairs(QUEST_MARKS) do ns.settings[k] = v end; questChanged() end), rQ1)
 
-local sL = section("Leveling", r8)
+local sL = section("Leveling", rQ2)
 local rL1 = add(UI.Toggle(panel, CONTENT_W, "Show the level-up card",
   "Your gains, how long the level took, what's new at your trainer and guildmates near your level.", get("levelCard"), set("levelCard")), sL, true)
 local rL2 = add(UI.Toggle(panel, CONTENT_W, "Tell the guild when I level up",
