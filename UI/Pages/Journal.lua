@@ -80,6 +80,15 @@ local function dungeonList()
   return list
 end
 
+-- Dungeons and raids are picked separately (the Dungeons / Raids buttons beside the picker).
+local kind = "dungeon"
+local function kindOf(e) return e.static and e.static.raid and "raid" or "dungeon" end
+local function listOf(k)
+  local out = {}
+  for _, x in ipairs(dungeonList()) do if kindOf(x) == k then out[#out + 1] = x end end
+  return out
+end
+
 local function levelsOf(e)
   local l = e.static and e.static.levels
   return l and #l == 2 and (l[1] .. "-" .. l[2]) or nil
@@ -514,7 +523,7 @@ function page:Build(f)
   self.f = f
   -- dungeon picker: < [dropdown] >
   local function step(d)
-    local list = dungeonList()
+    local list = listOf(kind)
     for i, x in ipairs(list) do
       if x.name == selDungeon then
         local n = list[((i - 1 + d) % #list) + 1]
@@ -530,6 +539,18 @@ function page:Build(f)
   self.prev:SetPoint("TOPLEFT", 0, 0)
   self.picker:SetPoint("LEFT", self.prev, "RIGHT", 6, 0)
   self.next:SetPoint("LEFT", self.picker, "RIGHT", 6, 0)
+  -- Dungeons | Raids
+  self.kinds = {}
+  for i, k in ipairs({ { "dungeon", "Dungeons" }, { "raid", "Raids" } }) do
+    local b = UI.Button(f, k[2], 90, PICK_H, function()
+      if kind == k[1] then return end
+      kind = k[1]; selDungeon, selBoss, selFloor, selQuest = nil, nil, nil, nil
+      self:Refresh()
+    end)
+    b.kind = k[1]
+    if i == 1 then b:SetPoint("LEFT", self.next, "RIGHT", 16, 0) else b:SetPoint("LEFT", self.kinds[1], "RIGHT", 4, 0) end
+    self.kinds[i] = b
+  end
 
   -- header card
   self.head = panel(f)
@@ -1266,6 +1287,7 @@ function page:Refresh(arg)
     for _, x in ipairs(list) do
       if ns.Slug(x.name) == want then
         selDungeon, selBoss, selFloor, selQuest = x.name, arg.boss, nil, arg.quest
+        kind = kindOf(x)
         showLink, showShared = false, false
         jview = arg.view or "bosses"
       end
@@ -1273,8 +1295,13 @@ function page:Refresh(arg)
   end
   local e
   for _, x in ipairs(list) do if x.name == selDungeon then e = x end end
+  if e then kind = kindOf(e) end
+  list = listOf(kind)
   if not e then e = list[1]; selDungeon = e and e.name end
   self.entry = e
+  for _, b in ipairs(self.kinds) do
+    if b.kind == kind then b.label:SetTextColor(UI.Accent()) else b.label:SetTextColor(unpack(C.dim)) end
+  end
 
   local opts = {}
   for _, x in ipairs(list) do
@@ -1286,6 +1313,7 @@ function page:Refresh(arg)
 
   local has = e ~= nil
   for _, el in ipairs({ self.head, self.prev, self.picker, self.next }) do el:SetShown(has) end
+  self.picker.title:SetText(kind == "raid" and "Raid" or "Dungeon")
   self.empty:SetShown(not has)
   local panels = { map = { self.mapPanel }, bosses = { self.bossPanel, self.detailPanel }, quests = { self.qPanel, self.qdPanel }, runs = { self.runPanel }, trash = { self.trashPanel } }
   for k, ps in pairs(panels) do for _, p in ipairs(ps) do p:SetShown(has and k == jview) end end
@@ -1364,8 +1392,9 @@ function page:Refresh(arg)
     local floors = floorsOf(e)
     local valid = false
     local cur
-    for _, fl in ipairs(floors) do if fl.key == selFloor then cur = fl end end
-    if not cur then cur = floors[1]; selFloor = cur and cur.key end
+    local curN
+    for i, fl in ipairs(floors) do if fl.key == selFloor then cur, curN = fl, i end end
+    if not cur then cur, curN = floors[1], 1; selFloor = cur and cur.key end
     local bx = self.mapX or 16
     for i, fl in ipairs(floors) do
       local b = self.floorButtons[i]
@@ -1388,7 +1417,7 @@ function page:Refresh(arg)
       local f, x, y = ns.BossPin and ns.BossPin(e.name, b.name)
       local p
       if f then
-        if cur and f == cur.fid then p = { x = x, y = y } end
+        if ns.PinOnFloor(f, cur, curN) then p = { x = x, y = y } end
       else
         for _, q in ipairs(b.pins or {}) do if cur and cur.map and q.m == cur.map then p = q end end
         if not p and #(b.pins or {}) == 0 then

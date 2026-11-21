@@ -1,5 +1,13 @@
 # Foxden
 
+## 2.3.7
+
+- **Boss icons on dungeon maps for 12 dungeons**, from Blizzard's own boss positions: Wailing Caverns, Blackfathom Deeps, Razorfen Kraul, Gnomeregan, Razorfen Downs, Uldaman, Zul'Farrak, Maraudon, Sunken Temple, Blackrock Depths, Dire Maul and Stratholme. Hover a boss for its loot, click for the loot list. Others still need **Place bosses** once (it's shared with the guild).
+- **The dungeon's map on the world map:** inside a dungeon or raid, the map (M) shows the dungeon's own map with its bosses. Floor buttons for dungeons with several floors; right-click or **Game map** for the game's map. Turn it off in Settings (**Dungeon map on the world map**).
+- **Dungeons and raids are picked separately** on the Dungeons page (**Dungeons | Raids**).
+- **Quest chains for every quest:** click a quest in the quest tracker and its details show the whole chain, with **you're here**, done steps and steps in your log. Hover a step for its XP, gold, reputation and items; click it to open that quest, even one you don't have yet (Map and Arrow then go to its quest giver). Dungeon and raid quests are tagged.
+- **Fixed: the quest Link button** (and shift-click in the quest tracker) did nothing.
+
 ## 2.3.6
 
 - **Fixed: pressing M (or any key) set it as the Fishing key** and unbound what it did before ("M was "Toggle World Map Pane" before; that action is now unbound"). The key picker now only listens after you click it. On your next login Foxden takes back any fishing key you didn't pick yourself and gives M back to the world map. Want a fishing key? Set it again in **Settings → Keys**.

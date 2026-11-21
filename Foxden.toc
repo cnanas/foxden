@@ -2,7 +2,7 @@
 ## Title: Foxden
 ## Notes: Guild companion: dungeon run log, the dungeon journal, who can craft what, and the guild roster with optional location sharing.
 ## Author: Christian
-## Version: 2.3.6
+## Version: 2.3.7
 ## SavedVariables: FoxdenDB
 ## OptionalDeps: EllesmereUI, QuestieDB
 ## X-License: GPL-3.0-or-later
@@ -63,6 +63,7 @@ UI\StatPanel.lua
 UI\Widgets.lua
 UI\LootFilter.lua
 UI\MapCanvas.lua
+UI\DungeonMap.lua
 UI\Window.lua
 UI\Search.lua
 Views\Overview.lua

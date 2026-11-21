@@ -103,7 +103,9 @@ local r7b = add(UI.Toggle(panel, CONTENT_W, "Item sources in tooltips",
   "Which boss or quest an item comes from, at the bottom of its tooltip.", get("itemSource"), set("itemSource")), r7)
 local r7c = add(UI.Toggle(panel, CONTENT_W, "Auction prices in tooltips",
   "What it sells for on the auction house, anywhere in the world. From the guild website, refreshed daily. Also /fox price <item>.", get("auctionPrices"), set("auctionPrices")), r7b)
-local sQ = section("Quests", r7c)
+local r7d = add(UI.Toggle(panel, CONTENT_W, "Dungeon map on the world map",
+  "Inside a dungeon, the map (M) shows the dungeon's own map with its bosses. Click a boss for its loot.", get("dungeonWorldMap"), set("dungeonWorldMap")), r7c)
+local sQ = section("Quests", r7d)
 -- the quest helper has its own page in the Foxden window
 local r8 = CreateFrame("Frame", nil, panel); r8:SetSize(CONTENT_W, 44); r8.Refresh = function() end
 local r8b = UI.Button(r8, "Open the Quests page", 180, 26, function() if ns.OpenPage then ns.OpenPage("quests") end end)

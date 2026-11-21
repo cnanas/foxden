@@ -182,9 +182,8 @@ local function line(i)
         ns.RefreshQuestTracker()
       elseif s.quest then
         local q = s.quest
-        if IsModifiedClick and IsModifiedClick("CHATLINK") and GetQuestLink and ChatEdit_InsertLink then
-          local link = GetQuestLink(q.index and C_QuestLog == nil and q.index or q.id)
-          if link then ChatEdit_InsertLink(link) end
+        if IsModifiedClick and IsModifiedClick("CHATLINK") and ns.QuestLink then
+          ns.LinkInChat(ns.QuestLink(q.id))
         elseif button == "RightButton" then pinQuest(q)
         elseif ns.ToggleQuestDetails then GameTooltip:Hide(); ns.ToggleQuestDetails(q, frame)
         else openOnMap(q) end
