@@ -445,10 +445,12 @@ local function chainOf(q)
   end
   return chain, k or 1, cur
 end
--- The chain as numbered lines: done steps green with a tick, this quest in the accent colour.
+-- The chain as numbered lines: done steps green with a tick, this quest in the accent colour,
+-- the step you're on marked "you're here" (gold "in your log" when you already have it).
 -- Long chains show the steps around this one.
 local TICK = " |TInterface\\RaidFrame\\ReadyCheck-Ready:12:12|t"
-local function chainLines(chain, k)
+local HERE = "  |TInterface\\GossipFrame\\AvailableQuestIcon:12:12|t|cffe8c35ayou're here|r"
+local function chainLines(chain, k, cur)
   local ar, ag, ab = UI.Accent()
   local first, last = 1, #chain
   if #chain > 10 then first, last = math.max(1, k - 4), math.min(#chain, k + 4) end
@@ -458,10 +460,11 @@ local function chainLines(chain, k)
     local step = chain[i]
     local st = ns.QuestState and ns.QuestState(step[1])
     local line = i .. ". " .. tostring(step[2])
-    if i == k then line = hex(ar, ag, ab) .. line .. "|r" .. (st == "done" and TICK or "")
+    local here = i == cur and st ~= "have" and HERE or ""
+    if i == k then line = hex(ar, ag, ab) .. line .. "|r" .. (st == "done" and TICK or st == "have" and "|cffe8c35a  (in your log)|r" or here)
     elseif st == "done" then line = "|cff6fd39a" .. line .. "|r" .. TICK
     elseif st == "have" then line = "|cffe8c35a" .. line .. "  (in your log)|r"
-    else line = "|cffc8ccd4" .. line .. "|r" end
+    else line = "|cffc8ccd4" .. line .. "|r" .. here end
     out[#out + 1] = line
   end
   if last < #chain then out[#out + 1] = "|cff6b7280   ... " .. #chain .. " steps|r" end
@@ -1028,7 +1031,7 @@ function page:ShowQuest(q)
   -- the whole chain
   qd.chainBox:SetShown(chain ~= nil and showChain)
   if chain and showChain then
-    qd.chainText:SetWidth(w - 24); qd.chainText:SetText(chainLines(chain, k))
+    qd.chainText:SetWidth(w - 24); qd.chainText:SetText(chainLines(chain, k, cur))
     local hh = (qd.chainText:GetStringHeight() or 0) + 20
     qd.chainBox:ClearAllPoints(); qd.chainBox:SetPoint("TOPLEFT", 0, -y); qd.chainBox:SetSize(w, hh)
     y = y + hh + 10
@@ -1112,8 +1115,8 @@ function page:ShowQuest(q)
   end
 end
 
--- One quest card: icon, title, level and status, faction crests; the picked card opens to show
--- the quest's chain with your progress.
+-- One quest card: icon, title, level and status, faction crests, and the quest's chain with
+-- your progress (every card, so you can see where you are in each chain at a glance).
 local function questCard(parent)
   local c = CreateFrame("Button", nil, parent)
   UI.Fill(c, C.raised); UI.Border(c)
@@ -1166,7 +1169,7 @@ function page:LayoutQuests(e)
     c.tint:SetShown(on); c.bar:SetShown(on)
     c.title:SetWidth(cw - 42 - 58); c.title:SetText(x[2])
     if on then c.title:SetTextColor(UI.Accent()) else c.title:SetTextColor(unpack((st == "done" or x.locked) and C.dim or C.text)) end
-    local chain, k = chainOf(x)
+    local chain, k, cur = chainOf(x)
     local bits = {}
     local lvl = (x[5] or 0) > 0 and x[5] or x[4]
     if (lvl or 0) > 0 then bits[#bits + 1] = "From level " .. lvl end
@@ -1175,9 +1178,9 @@ function page:LayoutQuests(e)
     if st == "done" then bits[#bits + 1] = "|cff6fd39aDone|r" elseif st == "have" then bits[#bits + 1] = "|cffe8c35aIn your log|r" end
     c.sub:SetText(table.concat(bits, "  ·  "))
     local h = 12 + math.max(16, c.title:GetStringHeight() or 16) + 5 + 12 + 12
-    c.inset:SetShown(on and chain ~= nil)
-    if on and chain then
-      c.steps:SetWidth(cw - 24 - 20); c.steps:SetText(chainLines(chain, k))
+    c.inset:SetShown(chain ~= nil)
+    if chain then
+      c.steps:SetWidth(cw - 24 - 20); c.steps:SetText(chainLines(chain, k, cur))
       local ih = (c.steps:GetStringHeight() or 0) + 16
       c.inset:ClearAllPoints(); c.inset:SetPoint("TOPLEFT", 12, -h); c.inset:SetPoint("RIGHT", c, "RIGHT", -12, 0); c.inset:SetHeight(ih)
       h = h + ih + 12

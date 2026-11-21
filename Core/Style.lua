@@ -245,6 +245,9 @@ function UI.KeyBind(parent, width, title, desc, command)
     local was = GetBindingAction and GetBindingAction(full)
     clear()
     if SetBinding(full, command) then
+      -- remember the player chose this key (the fishing repair leaves chosen keys alone)
+      ns.settings.keysChosen = ns.settings.keysChosen or {}
+      ns.settings.keysChosen[command] = true
       save()
       if was and was ~= "" and was ~= command and ns.say then
         ns.say(full .. " was \"" .. (GetBindingName and GetBindingName(was) or was) .. "\" before; that action is now unbound.", true)
@@ -256,7 +259,10 @@ function UI.KeyBind(parent, width, title, desc, command)
   b:SetScript("OnClick", function(_, mouse)
     if listening then return end
     if mouse == "RightButton" then
-      if not (InCombatLockdown and InCombatLockdown()) then clear(); save() end
+      if not (InCombatLockdown and InCombatLockdown()) then
+        clear(); save()
+        if ns.settings.keysChosen then ns.settings.keysChosen[command] = nil end
+      end
       return row:Refresh()
     end
     listening = true
@@ -265,6 +271,9 @@ function UI.KeyBind(parent, width, title, desc, command)
     row:Refresh()
   end)
   b:SetScript("OnKeyDown", function(_, key)
+    -- only after a click on the button: setting an OnKeyDown script can switch the frame's
+    -- keyboard on, and then any key pressed (M for the map) was taken as the new binding
+    if not listening then return end
     if MODIFIER_KEYS[key] then return end
     if key == "ESCAPE" then return stop() end
     bind(key)
@@ -272,6 +281,7 @@ function UI.KeyBind(parent, width, title, desc, command)
   b:SetScript("OnMouseDown", function(_, mouse)
     if listening and MOUSE_KEYS[mouse] then bind(MOUSE_KEYS[mouse]) end
   end)
+  b:EnableKeyboard(false)
   b:HookScript("OnHide", function() if listening then stop() end end)
   b:HookScript("OnEnter", function(s)
     GameTooltip:SetOwner(s, "ANCHOR_TOP")

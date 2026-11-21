@@ -1,5 +1,11 @@
 # Foxden
 
+## 2.3.6
+
+- **Fixed: pressing M (or any key) set it as the Fishing key** and unbound what it did before ("M was "Toggle World Map Pane" before; that action is now unbound"). The key picker now only listens after you click it. On your next login Foxden takes back any fishing key you didn't pick yourself and gives M back to the world map. Want a fishing key? Set it again in **Settings → Keys**.
+- **Quest chains on every quest card** in a dungeon's Quests tab, not just the one you pick, with the step you're on marked **you're here** (or **in your log** when you have it).
+- **Dungeon entrances use the game's swirl** on the world map (the raid swirl for raids). Hover for the levels, coloured for your level.
+
 ## 2.3.5
 
 - **Auction prices anywhere:** item tooltips show what the item goes for on the auction house ("Auction: 1g 20s (14 listed)"), wherever you are, not just at the auctioneer. `/fox price <item>` does the same: shift-click the item into chat or type its name. The prices come from your guild website, refreshed daily, and arrive with the website data (the companion app). Turn it off in Settings (**Auction prices in tooltips**).

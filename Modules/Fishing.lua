@@ -37,11 +37,38 @@ function ns.FishingKey()
   return GetBindingKey and GetBindingKey(ns.FISH_BINDING)
 end
 
+-- 2.3.4's key picker took any key pressed as the fishing key (M, for most people), which
+-- unbound that key's own action. Once: take back fishing keys nobody chose, and give M back
+-- to the world map.
+local function worldMapCommand()
+  for i = 1, (GetNumBindings and GetNumBindings() or 0) do
+    local cmd = GetBinding(i)
+    if cmd and GetBindingName and GetBindingName(cmd) == "Toggle World Map Pane" then return cmd end
+  end
+  return "TOGGLEWORLDMAP"
+end
+local function repairKeys()
+  local s = ns.settings
+  if not s or s.fishKeysRepaired or (InCombatLockdown and InCombatLockdown()) then return end
+  s.fishKeysRepaired = true
+  if s.keysChosen and s.keysChosen[ns.FISH_BINDING] then return end
+  local keys = { GetBindingKey(ns.FISH_BINDING) }
+  if #keys == 0 then return end
+  local gaveBack
+  for _, k in ipairs(keys) do
+    SetBinding(k)
+    if k == "M" and (GetBindingAction("M") or "") == "" and SetBinding("M", worldMapCommand()) then gaveBack = true end
+  end
+  if SaveBindings then SaveBindings(GetCurrentBindingSet and GetCurrentBindingSet() or 1) end
+  ns.say("Fixed a Foxden bug that set your Fishing key by accident" .. (gaveBack and "; M opens the world map again." or ".")
+    .. " Set a fishing key in Settings > Keys if you want one.", true)
+end
+
 ns.RegisterModule({
   name = "Fishing",
   events = {
     -- spell names can arrive late on a cold start; set again once logged in
-    PLAYER_LOGIN = function() setup() end,
+    PLAYER_LOGIN = function() setup(); C_Timer.After(3, repairKeys) end,
     PLAYER_REGEN_ENABLED = function() if button:GetAttribute("spell") == nil then setup() end end,
   },
 })

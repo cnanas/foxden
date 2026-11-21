@@ -1,5 +1,6 @@
 -- Foxden: dungeon and raid entrances on the world map (QuestieDB's dungeon list, see
--- Core/QuestSource.lua). A skull in a ring coloured by the dungeon's level for you;
+-- Core/QuestSource.lua). The game's own entrance swirl ("Dungeon" / "Raid" atlas); on a client
+-- without those, a skull in a ring coloured by the dungeon's level for you.
 -- hover for its name and levels, click to open it in Foxden, shift-click for the arrow.
 -- Shows on the zone map and zoomed out to the continent. Drawn by UI/MapPins.lua.
 
@@ -8,6 +9,12 @@ local UI = ns.UI
 local pins = {}
 local SKULL = "Interface\\TargetingFrame\\UI-TargetingFrame-Skull"
 local MASK = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
+
+-- the swirl, when this client has it
+local function hasAtlas(name)
+  return C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(name) ~= nil
+end
+local SWIRL = { dungeon = hasAtlas("Dungeon") and "Dungeon" or nil, raid = hasAtlas("Raid") and "Raid" or (hasAtlas("Dungeon") and "Dungeon" or nil) }
 
 local bySlug
 local function dungeonFor(slug)
@@ -92,6 +99,16 @@ function ns.DrawEntrancePins(child, shown)
         local lv = p.dungeon and p.dungeon.levels
         if lv and ns.Quests and ns.Quests.Color then r, g, b = ns.Quests.Color(math.floor((lv[1] + lv[2]) / 2)) end
         p.ring:SetColorTexture(r, g, b, 1)
+        local swirl = SWIRL[p.dungeon and p.dungeon.raid and "raid" or "dungeon"]
+        if swirl then
+          -- the swirl on its own, a little bigger; the level colour is in the tooltip
+          p:SetSize(s + 6, s + 6)
+          p.ring:Hide(); p.bg:Hide()
+          p.icon:ClearAllPoints(); p.icon:SetAllPoints(); p.icon:SetAtlas(swirl)
+        else
+          p.ring:Show(); p.bg:Show()
+          p.icon:ClearAllPoints(); p.icon:SetPoint("TOPLEFT", 4, -4); p.icon:SetPoint("BOTTOMRIGHT", -4, 4); p.icon:SetTexture(SKULL)
+        end
         p:ClearAllPoints(); p:SetPoint("CENTER", child, "TOPLEFT", x * w, -y * h)
         p:SetFrameStrata(child:GetFrameStrata())
         p:SetFrameLevel(math.max(1, level - 1)) -- under quest marks, which can share a spot
