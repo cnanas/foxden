@@ -1,5 +1,10 @@
 # Foxden
 
+## 2.3.10
+
+- **Light and dark themes:** Settings → **Theme**, or the **Light / Dark** button at the top of the Foxden window. Switches straight away.
+- **Readable in light mode:** every text color meets the WCAG AA contrast standard (4.5:1) on the light background. Class colors, gold, the accent and colored text are darkened just enough when they'd be too pale.
+
 ## 2.3.9
 
 ### A new look

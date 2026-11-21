@@ -174,11 +174,15 @@ local r4 = add(UI.Stepper(panel, CONTENT_W, "Keep runs",
 local rScale = add(UI.Stepper(panel, CONTENT_W, "Dashboard scale", "Size of everything in the /fox window. Drag its corner to resize the window itself.",
   { { 0.8, "80%" }, { 0.9, "90%" }, { 1, "100%" }, { 1.1, "110%" }, { 1.2, "120%" }, { 1.3, "130%" } },
   get("scale"), set("scale")), r4)
+local rTheme = add(UI.Stepper(panel, CONTENT_W, "Theme", "Dark or light. Also the button at the top of the Foxden window.",
+  { { "dark", "Dark" }, { "light", "Light" } },
+  function() return ns.settings.theme or "dark" end,
+  function(v) ns.settings.theme = v; UI.ApplyTheme(v) end), rScale)
 add(UI.Stepper(panel, CONTENT_W, "Window look",
   "Stone: the game's marble and rock, a warm trim. Stone + art: also a dimmed picture across the top of each section.",
   { { "art", "Stone + art" }, { "stone", "Stone" }, { "plain", "Plain" } },
   function() return ns.settings.look or "art" end,
-  function(v) ns.settings.look = v; if ns.ApplyLook then ns.ApplyLook() end; if ns.RefreshUI then ns.RefreshUI() end end), rScale)
+  function(v) ns.settings.look = v; if ns.ApplyLook then ns.ApplyLook() end; if ns.RefreshUI then ns.RefreshUI() end end), rTheme)
 
 function ns.RefreshSettings()
   for _, r in ipairs(rows) do r:Refresh() end
@@ -189,7 +193,7 @@ function ns.RefreshSettings()
     status:SetText("Logging " .. (run.dungeon or "a dungeon"))
     statusSub:SetText(string.format("%d fights counted  ·  %d bosses down  ·  %d wipes", run.fights or 0, #(run.bosses or {}), run.wipes or 0))
   else
-    if ns.settings.track then dot:SetColorTexture(unpack(C.dim)) else dot:SetColorTexture(unpack(C.danger)) end
+    if ns.settings.track then UI.Paint(dot, C.dim) else UI.Paint(dot, C.danger) end
     status:SetText(ns.settings.track and "Ready. The next dungeon you enter is logged." or "Tracking is off")
     statusSub:SetText(count .. (count == 1 and " run" or " runs") .. " in the log"
       .. ((ns.MeterReady and not ns.MeterReady()) and "  ·  Damage meter unavailable, time and bosses only" or ""))

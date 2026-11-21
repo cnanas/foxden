@@ -1,5 +1,8 @@
 -- Foxden: shared look.
--- Flat dark surfaces, 1px hairlines, one accent color. When EllesmereUI is
+-- Flat surfaces, 1px hairlines, one accent color, in a dark or a light theme (Settings > Theme).
+-- The palette tables in UI.C keep their identity; switching theme rewrites their values and
+-- repaints everything drawn through UI.Fill / UI.Border / UI.Text / UI.RoundCorners (and
+-- whatever registered with UI.OnTheme), so it changes live. When EllesmereUI is
 -- installed, its skinning API hands us the player's accent color and UI font so
 -- these windows sit comfortably next to the rest of their interface.
 
@@ -18,7 +21,74 @@ UI.C = {
   faint    = { 0.42, 0.45, 0.50, 1 },
   danger   = { 0.94, 0.42, 0.42, 1 },
 }
-local FOX = { 0.498, 0.890, 0.769 } -- #7FE3C4
+local FOX = { 0.498, 0.890, 0.769 } -- #7FE3C4 (dark theme); the light theme uses a deeper teal
+
+local THEMES = {
+  dark = {
+    bg = { 0.055, 0.060, 0.072, 1 }, surface = { 0.085, 0.092, 0.108, 1 }, raised = { 0.115, 0.124, 0.145, 1 },
+    hover = { 1, 1, 1, 0.05 }, line = { 1, 1, 1, 0.08 },
+    text = { 0.93, 0.94, 0.96, 1 }, dim = { 0.60, 0.63, 0.69, 1 }, faint = { 0.42, 0.45, 0.50, 1 },
+    danger = { 0.94, 0.42, 0.42, 1 }, accent = { 0.498, 0.890, 0.769 },
+  },
+  light = {
+    bg = { 0.925, 0.910, 0.885, 1 }, surface = { 0.985, 0.978, 0.965, 1 }, raised = { 0.895, 0.880, 0.855, 1 },
+    hover = { 0, 0, 0, 0.045 }, line = { 0, 0, 0, 0.11 },
+    text = { 0.11, 0.11, 0.13, 1 }, dim = { 0.28, 0.29, 0.33, 1 }, faint = { 0.33, 0.34, 0.38, 1 },
+    danger = { 0.78, 0.22, 0.22, 1 }, accent = { 0.07, 0.50, 0.42 },
+  },
+}
+UI.theme = "dark"
+function UI.IsLight() return UI.theme == "light" end
+
+-- ---- contrast (WCAG AA: 4.5:1 for text) ------------------------------------------------------
+-- In the light theme, any text color too pale for the light background (class colors, gold,
+-- the accent, colors written into text as |cff codes) is darkened, same hue, until it passes.
+local function channel(c) c = math.max(0, math.min(1, c)); return c <= 0.03928 and c / 12.92 or ((c + 0.055) / 1.055) ^ 2.4 end
+local function luminance(r, g, b) return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b) end
+UI.Luminance = luminance
+-- the darkest background text sits on in the light theme: list panels (the page darkened 12%,
+-- luminance about 0.60). Text at least 4.5:1 against that passes on every lighter surface too.
+local DARKEST_BG_L = 0.60
+local MAX_L = (DARKEST_BG_L + 0.05) / 4.5 - 0.05
+function UI.Readable(r, g, b)
+  if UI.theme ~= "light" or not r then return r, g, b end
+  if luminance(r, g, b) <= MAX_L then return r, g, b end
+  local lo, hi = 0, 1 -- scale toward black until it passes
+  for _ = 1, 14 do
+    local mid = (lo + hi) / 2
+    if luminance(r * mid, g * mid, b * mid) <= MAX_L then lo = mid else hi = mid end
+  end
+  return r * lo, g * lo, b * lo
+end
+local function readableHex(hex)
+  local r, g, b = tonumber(hex:sub(1, 2), 16) / 255, tonumber(hex:sub(3, 4), 16) / 255, tonumber(hex:sub(5, 6), 16) / 255
+  r, g, b = UI.Readable(r, g, b)
+  return string.format("%02x%02x%02x", math.floor(r * 255 + 0.5), math.floor(g * 255 + 0.5), math.floor(b * 255 + 0.5))
+end
+function UI.ReadableText(text)
+  if UI.theme ~= "light" or type(text) ~= "string" or not text:find("|c", 1, true) then return text end
+  return (text:gsub("|c(%x%x)(%x%x%x%x%x%x)", function(a, rgb) return "|c" .. a .. readableHex(rgb) end))
+end
+
+-- what's painted in a palette color, so a theme switch can repaint it: { region, colorTable, kind }
+local themed, themeHooks = {}, {}
+local function roleColor(color)
+  for _, v in pairs(UI.C) do if v == color then return true end end
+  return false
+end
+local trackedAt = setmetatable({}, { __mode = "k" }) -- region -> its entry, so it's tracked once
+local function track(region, color, kind)
+  if not (color and roleColor(color)) then return end
+  local e = trackedAt[region]
+  if e then e[2], e[3] = color, kind; return end
+  e = { region, color, kind }
+  themed[#themed + 1] = e; trackedAt[region] = e
+end
+-- paint a texture in a palette color and keep it painted through theme switches
+function UI.Paint(tex, color) tex:SetColorTexture(unpack(color)); track(tex, color, "tex") end
+UI.Track = track
+-- run fn now and again whenever the theme changes
+function UI.OnTheme(fn) themeHooks[#themeHooks + 1] = fn; fn() end
 
 local skin -- EllesmereUI skin handle, when available
 local accented = {} -- { region, alpha, kind }
@@ -28,7 +98,8 @@ function UI.Accent()
     local r, g, b = skin.GetAccentColor()
     if r then return r, g, b end
   end
-  return FOX[1], FOX[2], FOX[3]
+  local a = THEMES[UI.theme].accent
+  return a[1], a[2], a[3]
 end
 
 function UI.Font()
@@ -75,6 +146,7 @@ function UI.Fill(frame, color, layer)
   local t = frame:CreateTexture(nil, layer or "BACKGROUND")
   t:SetAllPoints()
   t:SetColorTexture(unpack(color))
+  track(t, color, "tex")
   return t
 end
 
@@ -88,6 +160,7 @@ function UI.Border(frame, color)
   }) do
     local t = frame:CreateTexture(nil, "BORDER")
     t:SetColorTexture(unpack(color))
+    track(t, color, "tex")
     t:SetPoint(pts[1]); t:SetPoint(pts[2])
     if pts[3] then t:SetWidth(pts[3]) else t:SetHeight(pts[4]) end
     edges[i] = t
@@ -109,10 +182,30 @@ function UI.Round(owner, tex)
   end
 end
 
+local function readableFontString(fs)
+  local setColor, setText = fs.SetTextColor, fs.SetText
+  fs.SetTextColor = function(self, r, g, b, a)
+    self._rgb = { r, g, b, a } -- as asked, so a theme switch can redo it
+    local rr, gg, bb = UI.Readable(r, g, b)
+    return setColor(self, rr, gg, bb, a)
+  end
+  fs.SetText = function(self, text)
+    self._raw = text
+    return setText(self, UI.ReadableText(text))
+  end
+  fs.RefreshReadable = function(self)
+    if self._rgb then local c = self._rgb; local rr, gg, bb = UI.Readable(c[1], c[2], c[3]); setColor(self, rr, gg, bb, c[4]) end
+    if self._raw ~= nil then setText(self, UI.ReadableText(self._raw)) end
+  end
+end
+local readables = setmetatable({}, { __mode = "k" })
+
 function UI.Text(parent, size, color, justify)
   local fs = parent:CreateFontString(nil, "OVERLAY")
+  readableFontString(fs); readables[fs] = true
   fs:SetFont(UI.Font(), size, "")
   fs:SetTextColor(unpack(color or UI.C.text))
+  track(fs, color or UI.C.text, "text")
   fs:SetJustifyH(justify or "LEFT")
   fs:SetWordWrap(false)
   texts[#texts + 1] = { fs = fs, size = size }
@@ -144,7 +237,7 @@ function UI.CloseButton(parent, onClick)
   local hover = UI.Fill(b, UI.C.hover, "ARTWORK"); hover:Hide()
   for _, angle in ipairs({ 45, -45 }) do
     local l = b:CreateTexture(nil, "OVERLAY")
-    l:SetColorTexture(unpack(UI.C.dim))
+    UI.Paint(l, UI.C.dim)
     l:SetSize(12, 1.5)
     l:SetPoint("CENTER")
     l:SetRotation(math.rad(angle))
@@ -169,7 +262,7 @@ local function settingRow(parent, width, title, desc)
     row.desc:SetText(desc)
   end
   local sep = row:CreateTexture(nil, "BORDER")
-  sep:SetColorTexture(unpack(UI.C.line))
+  UI.Paint(sep, UI.C.line)
   sep:SetPoint("BOTTOMLEFT"); sep:SetPoint("BOTTOMRIGHT"); sep:SetHeight(1)
   return row
 end
@@ -191,8 +284,8 @@ function UI.Toggle(parent, width, title, desc, get, set)
       knob:SetColorTexture(0.05, 0.06, 0.07, 1)
       knob:ClearAllPoints(); knob:SetPoint("RIGHT", -3, 0)
     else
-      track:SetColorTexture(unpack(UI.C.raised))
-      knob:SetColorTexture(unpack(UI.C.dim))
+      UI.Paint(track, UI.C.raised)
+      UI.Paint(knob, UI.C.dim)
       knob:ClearAllPoints(); knob:SetPoint("LEFT", 3, 0)
     end
   end
@@ -408,4 +501,23 @@ end
 -- "Name-Realm" and "Name" refer to the same player in stats and party lists
 function UI.ShortName(name)
   return name and (name:gsub("%-.*$", "")) or "?"
+end
+
+-- Switch theme ("dark" or "light"): rewrite the palette's values and repaint.
+function UI.ApplyTheme(name)
+  name = THEMES[name] and name or "dark"
+  UI.theme = name
+  for role, v in pairs(THEMES[name]) do
+    local c = UI.C[role]
+    if c then for i = 1, #v do c[i] = v[i] end end
+  end
+  for _, e in ipairs(themed) do
+    local region, color, kind = e[1], e[2], e[3]
+    if kind == "text" then region:SetTextColor(unpack(color))
+    elseif kind == "vertex" then region:SetVertexColor(unpack(color))
+    else region:SetColorTexture(unpack(color)) end
+  end
+  for _, fn in ipairs(themeHooks) do pcall(fn) end
+  for fs in pairs(readables) do pcall(fs.RefreshReadable, fs) end
+  recolor() -- accent-colored regions, then the open page
 end

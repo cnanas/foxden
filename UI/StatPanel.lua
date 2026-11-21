@@ -41,7 +41,7 @@ function UI.StatPanel(parent, width, keys, maxBars)
     p.tabs[#p.tabs + 1] = tab
   end
   p.tabLine = p:CreateTexture(nil, "BORDER")
-  p.tabLine:SetColorTexture(unpack(C.line))
+  UI.Paint(p.tabLine, C.line)
   p.tabLine:SetHeight(1)
 
   p.bars = {}

@@ -151,7 +151,7 @@ function page:Build(f)
   d.matCols = UI.Text(d, 11, C.faint, "RIGHT"); d.matCols:SetText("each          total")
   d.rows = {}
   d.total = UI.Text(d, 13); d.totalValue = UI.Text(d, 13, C.text, "RIGHT")
-  d.line = d:CreateTexture(nil, "BORDER"); d.line:SetColorTexture(unpack(C.line)); d.line:SetHeight(1)
+  d.line = d:CreateTexture(nil, "BORDER"); UI.Paint(d.line, C.line); d.line:SetHeight(1)
   d.note = UI.Text(d, 11, C.dim); d.note:SetWordWrap(true); d.note:SetJustifyV("TOP")
   d.whoHead = UI.Text(d, 12); UI.Accented(d.whoHead); d.whoHead:SetText("Who can make it")
   d.who = UI.Text(d, 12, C.text); d.who:SetWordWrap(true); d.who:SetJustifyV("TOP")

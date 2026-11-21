@@ -39,7 +39,7 @@ function page:Build(f)
   self.list:SetPoint("TOPLEFT"); self.list:SetPoint("BOTTOMLEFT"); self.list:SetWidth(LIST_W)
   UI.Fill(self.list, { 0, 0, 0, 0.12 })
   local divider = f:CreateTexture(nil, "BORDER")
-  divider:SetColorTexture(unpack(C.line)); divider:SetPoint("TOPLEFT", self.list, "TOPRIGHT"); divider:SetPoint("BOTTOMLEFT", self.list, "BOTTOMRIGHT"); divider:SetWidth(1)
+  UI.Paint(divider, C.line); divider:SetPoint("TOPLEFT", self.list, "TOPRIGHT"); divider:SetPoint("BOTTOMLEFT", self.list, "BOTTOMRIGHT"); divider:SetWidth(1)
 
   local d = CreateFrame("Frame", nil, f)
   d:SetPoint("TOPLEFT", self.list, "TOPRIGHT", PAD + 1, -PAD)
@@ -67,7 +67,7 @@ function page:Build(f)
     b:SetScript("OnClick", function() viewKey = view.key; ns.RefreshUI() end)
     d.viewTabs[#d.viewTabs + 1] = b
   end
-  d.strip = d:CreateTexture(nil, "BORDER"); d.strip:SetColorTexture(unpack(C.line)); d.strip:SetPoint("TOPLEFT", 0, -72); d.strip:SetPoint("TOPRIGHT", 0, -72); d.strip:SetHeight(1)
+  d.strip = d:CreateTexture(nil, "BORDER"); UI.Paint(d.strip, C.line); d.strip:SetPoint("TOPLEFT", 0, -72); d.strip:SetPoint("TOPRIGHT", 0, -72); d.strip:SetHeight(1)
   d.panes = {}
   for _, view in ipairs(ns.views) do
     local pane = CreateFrame("Frame", nil, d)

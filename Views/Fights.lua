@@ -23,11 +23,11 @@ function view:Build(pane, width, height)
     r.index = idx
     r.name:SetText(s.label or "Trash")
     if s.kind == "boss" then
-      if s.kill then r.mark:SetColorTexture(UI.Accent()) else r.mark:SetColorTexture(unpack(C.danger)) end
+      if s.kill then r.mark:SetColorTexture(UI.Accent()) else UI.Paint(r.mark, C.danger) end
       r.sub:SetText((s.kill and "Kill" or "Wipe") .. ", at " .. UI.Time(s.at))
       r.name:SetTextColor(unpack(C.text))
     else
-      r.mark:SetColorTexture(unpack(C.line))
+      UI.Paint(r.mark, C.line)
       r.sub:SetText("Trash, at " .. UI.Time(s.at))
       r.name:SetTextColor(unpack(C.dim))
     end

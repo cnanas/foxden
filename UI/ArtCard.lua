@@ -73,6 +73,7 @@ function UI.RoundCorners(f, radius, color)
     local t = f.corners[i] or f:CreateTexture(nil, "OVERLAY", nil, 7)
     t:SetTexture(CORNER); t:SetTexCoord(sp[2], sp[3], sp[4], sp[5])
     t:SetVertexColor(color[1], color[2], color[3], color[4] or 1)
+    if UI.Track and not t.tracked then UI.Track(t, color, "vertex"); t.tracked = true end
     t:SetSize(radius, radius); t:ClearAllPoints(); t:SetPoint(sp[1])
     f.corners[i] = t
   end
@@ -85,7 +86,8 @@ function UI.Tile(parent)
   local t = CreateFrame("Button", nil, parent)
   t:RegisterForClicks("LeftButtonUp")
   -- a little see-through, so the window's stone and art read faintly through it
-  t.bg = t:CreateTexture(nil, "BACKGROUND"); t.bg:SetAllPoints(); t.bg:SetColorTexture(C.surface[1], C.surface[2], C.surface[3], 0.86)
+  t.bg = t:CreateTexture(nil, "BACKGROUND"); t.bg:SetAllPoints()
+  UI.OnTheme(function() t.bg:SetColorTexture(C.surface[1], C.surface[2], C.surface[3], UI.IsLight() and 0.92 or 0.86) end)
   t.sheen = t:CreateTexture(nil, "BACKGROUND", nil, 1); t.sheen:SetPoint("TOPLEFT"); t.sheen:SetPoint("TOPRIGHT"); t.sheen:SetHeight(46)
   t.sheen:SetColorTexture(1, 1, 1, 1)
   if not (CreateColor and t.sheen.SetGradient and pcall(t.sheen.SetGradient, t.sheen, "VERTICAL", CreateColor(1, 1, 1, 0), CreateColor(1, 1, 1, 0.045))) then t.sheen:Hide() end
@@ -120,7 +122,7 @@ end
 function UI.ArtCard(parent)
   local c = CreateFrame("Button", nil, parent)
   c:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-  c.bg = c:CreateTexture(nil, "BACKGROUND"); c.bg:SetAllPoints(); c.bg:SetColorTexture(unpack(C.raised))
+  c.bg = c:CreateTexture(nil, "BACKGROUND"); c.bg:SetAllPoints(); UI.Paint(c.bg, C.raised)
   c.art = c:CreateTexture(nil, "BORDER"); c.art:SetPoint("TOPLEFT", 1, -1); c.art:SetPoint("BOTTOMRIGHT", -1, 1)
   c.top = c:CreateTexture(nil, "ARTWORK"); c.top:SetPoint("TOPLEFT", 1, -1); c.top:SetPoint("TOPRIGHT", -1, -1); c.top:SetHeight(40)
   shade(c.top, 0.75, 0)

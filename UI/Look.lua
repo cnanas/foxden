@@ -68,15 +68,9 @@ function ns.BuildLook(W, header, side)
   L.banner:SetPoint("TOPLEFT", 0, 0); L.banner:SetPoint("TOPRIGHT", 0, 0); L.banner:SetHeight(BANNER_H)
   L.bannerFade = W.content:CreateTexture(nil, "BACKGROUND", nil, 4)
   L.bannerFade:SetPoint("TOPLEFT", L.banner, "TOPLEFT"); L.bannerFade:SetPoint("BOTTOMRIGHT", L.banner, "BOTTOMRIGHT")
-  L.bannerFade:SetColorTexture(1, 1, 1, 1)
-  if CreateColor and L.bannerFade.SetGradient then
-    pcall(L.bannerFade.SetGradient, L.bannerFade, "VERTICAL", CreateColor(C.bg[1], C.bg[2], C.bg[3], 1), CreateColor(C.bg[1], C.bg[2], C.bg[3], 0.45))
-  else
-    L.bannerFade:SetColorTexture(C.bg[1], C.bg[2], C.bg[3], 0.7)
-  end
   L.W = W
   W.content:HookScript("OnSizeChanged", function() ns.ApplyLook() end)
-  ns.ApplyLook()
+  UI.OnTheme(function() ns.ApplyLook() end)
 end
 
 -- The section's default picture.
@@ -122,9 +116,19 @@ function ns.ApplyLook()
   if not L.W then return end
   local mode = look()
   local stone = mode ~= "plain"
-  L.marble:SetShown(stone); L.rock:SetShown(stone); L.rockShade:SetShown(stone)
-  L.headLight:SetShown(stone); L.gold:SetShown(stone)
-  for _, t in ipairs(L.vig) do t:SetShown(stone) end
+  local light = UI.IsLight and UI.IsLight()
+  -- light theme: only a faint marble grain; no dark rock, header light or vignette
+  L.marble:SetShown(stone); L.marble:SetAlpha(light and 0.07 or 0.55)
+  L.rock:SetShown(stone and not light); L.rockShade:SetShown(stone and not light)
+  L.headLight:SetShown(stone and not light); L.gold:SetShown(stone)
+  L.gold:SetColorTexture(GOLD[1] * (light and 0.75 or 1), GOLD[2] * (light and 0.75 or 1), GOLD[3] * (light and 0.75 or 1), light and 0.6 or 0.45)
+  for _, t in ipairs(L.vig) do t:SetShown(stone and not light) end
+  -- the banner fades into the page color (which changes with the theme)
+  L.bannerFade:SetColorTexture(1, 1, 1, 1)
+  if not (CreateColor and L.bannerFade.SetGradient and pcall(L.bannerFade.SetGradient, L.bannerFade, "VERTICAL",
+      CreateColor(C.bg[1], C.bg[2], C.bg[3], 1), CreateColor(C.bg[1], C.bg[2], C.bg[3], light and 0.82 or 0.45))) then
+    L.bannerFade:SetColorTexture(C.bg[1], C.bg[2], C.bg[3], 0.7)
+  end
   local art = mode == "art" and bannerArt
   if art then
     local file, kind = art, "full"
@@ -133,7 +137,7 @@ function ns.ApplyLook()
     if ok and r ~= false then
       local w = L.W.content:GetWidth() or 800
       L.banner:SetTexCoord(UI.CoverCoords(kind, w, BANNER_H))
-      L.banner:SetAlpha(0.42); L.banner:SetDesaturated(false)
+      L.banner:SetAlpha(light and 0.32 or 0.42); L.banner:SetDesaturated(false)
       L.banner:Show(); L.bannerFade:Show()
       return
     end

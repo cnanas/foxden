@@ -246,7 +246,7 @@ local function build()
     local max = math.max(0, (panel.body:GetHeight() or 0) - (sf:GetHeight() or 0))
     sf:SetVerticalScroll(math.max(0, math.min(max, (sf:GetVerticalScroll() or 0) - d * 40)))
   end)
-  local line = panel:CreateTexture(nil, "BORDER"); line:SetColorTexture(unpack(C.line)); line:SetHeight(1)
+  local line = panel:CreateTexture(nil, "BORDER"); UI.Paint(line, C.line); line:SetHeight(1)
   line:SetPoint("BOTTOMLEFT", 0, 40); line:SetPoint("BOTTOMRIGHT", 0, 40)
   local function q() return current and ns.Quests and ns.Quests.InLog(current) end
   -- a quest you don't have yet: where it starts
