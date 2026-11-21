@@ -134,8 +134,8 @@ function page:RefreshStatus()
         .. (ns.QuestSource.note and (". " .. ns.QuestSource.note) or "")) or "its own data"),
     ns.QuestMapStatus and ns.QuestMapStatus() or "",
   }
-  local errs = ns.db and ns.db.questErrors
-  if errs and errs[1] then lines[#lines + 1] = "|cffef6b6bLast problem (" .. errs[1].where .. "): " .. errs[1].err .. "|r" end
+  local last = ns.Quests and ns.Quests.LastError and ns.Quests.LastError()
+  if last then lines[#lines + 1] = "|cffef6b6bLast problem (" .. last .. ")|r" end
   card.lines:SetText(table.concat(lines, "\n"))
   card:SetHeight(math.max(72, 12 + 18 + 8 + (card.lines:GetStringHeight() or 30) + 14))
 end

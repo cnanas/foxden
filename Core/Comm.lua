@@ -44,6 +44,12 @@ pump = function()
 end
 
 function ns.Send(text, channel, target, urgent, done)
+  -- Forever can report an empty realm, which makes keys like "Foxwarrior-"; the server
+  -- rejects that as a whisper target ("No player named 'Foxwarrior-'"), so drop the dash.
+  if type(target) == "string" then
+    target = target:gsub("%-$", "")
+    if target == "" then return end
+  end
   local item = { text = text, channel = channel or "GUILD", target = target, done = done }
   if urgent then table.insert(queue, 1, item) else queue[#queue + 1] = item end
   if not running then running = true; last = last == 0 and GetTime() or last; C_Timer.After(0, pump) end

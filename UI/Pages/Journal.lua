@@ -18,6 +18,8 @@ local SKULL_ICON = "Interface\\Icons\\INV_Misc_Bone_HumanSkull_01"
 
 local page = { key = "journal", label = "Dungeons", order = 30 }
 local selDungeon, selBoss, selFloor, selQuest
+local placing -- { dungeon, i }: placing boss pins on the Map tab, boss i next
+function ns.JournalDungeon() return selDungeon end
 local jview = "bosses" -- or "map", "quests", "runs"
 local showFaction -- { A = true/false, H = true/false }; starts as your own faction
 local showShared, showChain, showLink = false, false, false
@@ -206,15 +208,20 @@ end
 ns.ResolveNpcLooks = resolveLooks -- the dungeon tracker asks for its bosses too
 
 local function floorsOf(e)
-  if e.journal and #(e.journal.floors or {}) > 0 then return e.journal.floors end
+  if e.journal and #(e.journal.floors or {}) > 0 then
+    for _, f in ipairs(e.journal.floors) do f.key = f.key or f.map; f.fid = f.fid or ("m" .. f.map) end
+    return e.journal.floors
+  end
   local list, seen = {}, {}
   for _, r in ipairs(e.stats and e.stats.runs or {}) do
     for _, f in ipairs(r.route and r.route.floors or {}) do
       local info = C_Map and C_Map.GetMapInfo and C_Map.GetMapInfo(f.map)
       local isDungeonMap = not info or not info.mapType or info.mapType >= 4 -- 4 = dungeon, 5 = micro
-      if isDungeonMap and not seen[f.map] then seen[f.map] = true; list[#list + 1] = { map = f.map, name = f.name } end
+      if isDungeonMap and not seen[f.map] and ns.MapHasArt and ns.MapHasArt(f.map) then seen[f.map] = true; list[#list + 1] = { key = f.map, fid = "m" .. f.map, map = f.map, name = f.name } end
     end
   end
+  -- no journal, no runs yet: find the dungeon's map by name in the game's map list
+  if #list == 0 and ns.DungeonFloors then list = ns.DungeonFloors(e.name) end
   return list
 end
 
@@ -293,6 +300,10 @@ local function bossText(e, boss)
   for _, t in ipairs(site and site.tips or {}) do
     if t[1] == ns.Slug(e.name) and t[2] == boss.name then tips[#tips + 1] = t end
   end
+  -- yours written in game, on their way to the website: they replace that role's tip here
+  local pending = ns.PendingTips and ns.PendingTips(ns.Slug(e.name), boss.name) or {}
+  for i = #tips, 1, -1 do if pending[tips[i][3]] then table.remove(tips, i) end end
+  for role, p in pairs(pending) do tips[#tips + 1] = { p.d, p.b, role, p.t, "you, on its way to the website" } end
   section("Guild tips")
   if #tips > 0 then
     local order = { tank = 1, damage = 2, healer = 3, all = 4 }
@@ -301,7 +312,7 @@ local function bossText(e, boss)
       lines[#lines + 1] = "|cffffffff" .. (ROLE_TAG[t[3]] or "Everyone") .. ":|r " .. t[4] .. (t[5] and t[5] ~= "" and (dim .. "  (" .. t[5] .. ")|r") or "")
     end
   else
-    lines[#lines + 1] = dim .. "No tips yet. Guild members add them on the website's Journal page, then they show here the next time you log in.|r"
+    lines[#lines + 1] = dim .. "No tips yet. Click Write a tip below, or add one on the website's Journal page.|r"
   end
   return table.concat(lines, "\n")
 end
@@ -638,13 +649,23 @@ function page:Build(f)
   self.lootHead = UI.Text(self.detail, 13); UI.Accented(self.lootHead); self.lootHead:SetText("Loot")
   self.lootRows = {}
   self.body = UI.Text(self.detail, 12, C.text); self.body:SetWordWrap(true); self.body:SetJustifyV("TOP")
+  self.tipBtn = UI.Button(self.detail, "Write a tip", 100, 24, function(b)
+    if b.e and b.boss and ns.OpenTipEditor then ns.OpenTipEditor(b.e.name, b.boss.name) end
+  end)
   self.lootNote = UI.Text(self.detail, 11, C.faint); self.lootNote:SetWordWrap(true); self.lootNote:SetJustifyV("TOP")
 
   -- Map
   self.mapPanel = panel(f)
   self.floorButtons = {}
   self.map = UI.MapCanvas(self.mapPanel)
-  self.map.onPin = function(name) selBoss = name; jview = "bosses"; ns.RefreshUI() end
+  self.placeBtn = UI.Button(self.mapPanel, "Place bosses", 120, 24, function()
+    if placing then placing = nil else placing = { dungeon = selDungeon, i = 1 } end
+    ns.RefreshUI()
+  end)
+  self.skipBtn = UI.Button(self.mapPanel, "Skip", 60, 24, function()
+    if placing then placing.i = placing.i + 1 end
+    ns.RefreshUI()
+  end)
   self.mapNote = UI.Text(self.mapPanel, 11, C.faint); self.mapNote:SetWordWrap(true)
 
   -- Quests: cards on the left (the picked one opens to show its chain), the picked quest on the right
@@ -782,6 +803,8 @@ function page:Layout(w, h)
   self.mapX = math.floor((w - mw) / 2)
   self.map:ClearAllPoints(); self.map:SetPoint("TOPLEFT", self.mapX, -16 - 34)
   self.mapNote:ClearAllPoints(); self.mapNote:SetPoint("TOPLEFT", self.mapX, -16 - 34 - mh - 8); self.mapNote:SetWidth(mw)
+  self.placeBtn:ClearAllPoints(); self.placeBtn:SetPoint("TOPRIGHT", self.mapPanel, "TOPLEFT", self.mapX + mw, -16)
+  self.skipBtn:ClearAllPoints(); self.skipBtn:SetPoint("RIGHT", self.placeBtn, "LEFT", -6, 0)
   self.empty:ClearAllPoints(); self.empty:SetPoint("CENTER"); self.empty:SetWidth(w - 40)
 end
 
@@ -896,7 +919,11 @@ function page:ShowBoss(e, boss)
     self.body:SetWidth(w); self.body:SetText(bossText(e, boss))
     self.body:ClearAllPoints(); self.body:SetPoint("TOPLEFT", 0, y - 10)
     y = y - 10 - (self.body:GetStringHeight() or 0)
+    self.tipBtn.e, self.tipBtn.boss = e, boss
+    self.tipBtn:ClearAllPoints(); self.tipBtn:SetPoint("TOPLEFT", 0, y - 10)
+    y = y - 10 - 24
   end
+  self.tipBtn:SetShown(boss ~= nil)
   self.lootNote:SetShown(note ~= nil and note ~= "")
   if self.lootNote:IsShown() then
     self.lootNote:SetWidth(w); self.lootNote:SetText(note)
@@ -1333,31 +1360,103 @@ function page:Refresh(arg)
   if jview == "map" then
     local floors = floorsOf(e)
     local valid = false
-    for _, fl in ipairs(floors) do if fl.map == selFloor then valid = true end end
-    if not valid then selFloor = floors[1] and floors[1].map end
+    local cur
+    for _, fl in ipairs(floors) do if fl.key == selFloor then cur = fl end end
+    if not cur then cur = floors[1]; selFloor = cur and cur.key end
     local bx = self.mapX or 16
     for i, fl in ipairs(floors) do
       local b = self.floorButtons[i]
       if not b then b = UI.Button(self.mapPanel, "", 80, 24, function(btn) selFloor = btn.map; ns.RefreshUI() end); self.floorButtons[i] = b end
-      b.map = fl.map
+      b.map = fl.key
       b.label:SetText(fl.name or ("Floor " .. i))
       b:SetWidth(math.min(170, b.label:GetStringWidth() + 20))
       b:ClearAllPoints(); b:SetPoint("TOPLEFT", bx, -16)
-      if fl.map == selFloor then b.label:SetTextColor(UI.Accent()) else b.label:SetTextColor(unpack(C.text)) end
+      if fl.key == selFloor then b.label:SetTextColor(UI.Accent()) else b.label:SetTextColor(unpack(C.text)) end
       bx = bx + b:GetWidth() + 6
       b:SetShown(#floors > 1)
     end
     for i = #floors + 1, #self.floorButtons do self.floorButtons[i]:Hide() end
-    local pins = {}
+    -- where each boss stands: placed by you or the guild, else seen in your runs, else the game's own data
+    local onMap = ns.EncounterPins and ns.EncounterPins(floors) or {}
+    local ids = {}
+    for _, sb in ipairs(e.static and e.static.bosses or {}) do ids[sb.name] = sb.ids end
+    local pins, unplaced = {}, {}
     for _, b in ipairs(bosses) do
-      for _, p in ipairs(b.pins or {}) do
-        if p.m == selFloor then pins[#pins + 1] = { x = p.x, y = p.y, n = b.n, key = b.name, label = b.name, sub = "Click for its loot, abilities and tips", on = b.name == selBoss } end
+      local f, x, y = ns.BossPin and ns.BossPin(e.name, b.name)
+      local p
+      if f then
+        if cur and f == cur.fid then p = { x = x, y = y } end
+      else
+        for _, q in ipairs(b.pins or {}) do if cur and cur.map and q.m == cur.map then p = q end end
+        if not p and #(b.pins or {}) == 0 then
+          for _, id in ipairs(ids[b.name] or {}) do
+            local q = onMap[id]
+            if q and cur and q.m == cur.map then p = q; break end
+          end
+        end
       end
+      if p then pins[#pins + 1] = { x = p.x, y = p.y, n = b.n, key = b.name, label = b.name, on = b.name == selBoss }
+      elseif not f then unplaced[#unplaced + 1] = b.name end
     end
     self.map:SetShown(#floors > 0)
-    if #floors > 0 then self.map:Draw(selFloor, self.mapW or 400, self.mapH or 267, pins) end
-    self.mapNote:SetText(#floors == 0 and "The game has no map picture for this dungeon."
-      or (#pins == 0 and "No boss locations on this floor." or "Numbers are the boss order. Click a pin to open that boss."))
+    if cur then self.map:Draw(cur.map, self.mapW or 400, self.mapH or 267, pins, cur.tiles) end
+
+    -- placing pins: click the map where each boss stands, one after another
+    local dungeon = e.name
+    self.placeBtn:SetShown(cur ~= nil and #bosses > 0)
+    if placing and placing.dungeon ~= dungeon then placing = nil end
+    if placing and not bosses[placing.i] then placing = nil end
+    self.placeBtn.label:SetText(placing and "Done" or "Place bosses")
+    self.skipBtn:SetShown(placing ~= nil)
+    if placing then
+      local who = bosses[placing.i].name
+      self.map.onClick = function(x, y, button)
+        if button ~= "LeftButton" or not cur then return end
+        ns.SetBossPin(dungeon, who, cur.fid, x, y)
+        placing.i = placing.i + 1
+        if not bosses[placing.i] then placing = nil; ns.say("Boss pins saved and shared with the guild.") end
+        ns.RefreshUI()
+      end
+      self.mapNote:SetText(string.format("|cffffd27aClick the map where %d. %s stands.|r  Skip moves on; right-click a pin removes it; Done stops.", placing.i, who))
+    else
+      self.map.onClick = nil
+      self.mapNote:SetText(#floors == 0 and "The game has no map picture for this dungeon."
+        or (#pins == 0 and "No boss locations on this floor yet. Press Place bosses and click where each one stands (the skulls on the map)."
+        or ("Hover a boss for its loot, click it for the loot list. Numbers are the boss order."
+          .. (#unplaced > 0 and ("  Not placed yet: " .. table.concat(unplaced, ", ") .. ".") or ""))))
+    end
+    self.map.onPin = function(name, button, pinFrame)
+      if button == "RightButton" then
+        if placing then ns.SetBossPin(dungeon, name, nil, nil, nil); ns.RefreshUI()
+        else selBoss = name; jview = "bosses"; ns.RefreshUI() end
+        return
+      end
+      ns.ShowBossLootPopup(pinFrame, dungeon, name)
+    end
+    self.map.onPinEnter = function(pinFrame, tip)
+      local name = pinFrame.key
+      local boss
+      for _, b in ipairs(bosses) do if b.name == name then boss = b end end
+      tip:SetText(name)
+      local lvl = e.static and (function() for _, sb in ipairs(e.static.bosses or {}) do if sb.name == name then return sb.level end end end)()
+      if lvl then tip:AddLine("Level " .. lvl, 0.7, 0.72, 0.78) end
+      tip:AddLine(recordText(e, name), 0.7, 0.72, 0.78)
+      local loot = boss and lootOf(e, boss) or {}
+      if #loot > 0 then
+        tip:AddLine(" ")
+        for i, it in ipairs(loot) do
+          if i > 10 then tip:AddLine("+ " .. (#loot - 10) .. " more", 0.6, 0.63, 0.69); break end
+          local iname, _, quality, icon = itemLook(it.id, it.name)
+          local r, g, bl = qualityRGB(quality)
+          tip:AddLine((icon and ("|T" .. icon .. ":14:14:0:0|t ") or "") .. (iname or ("item " .. it.id)), r, g, bl)
+        end
+      else
+        tip:AddLine("No loot known yet.", 0.6, 0.63, 0.69)
+      end
+      tip:AddLine(" ")
+      tip:AddLine("Click: loot list (hover items for details)", 0.55, 0.85, 0.55)
+      tip:AddLine(placing and "Right-click: remove this pin" or "Right-click: open the boss page", 0.55, 0.85, 0.55)
+    end
     return
   end
 

@@ -301,6 +301,33 @@ async function uploadMembers(member) {
   }
 }
 
+// Boss tips written in game (Dungeons -> Bosses -> Write a tip) -> website. Each one goes
+// once; the addon drops it from its list when the website's copy comes back.
+async function uploadBossTips(outbox) {
+  if (!config.siteUrl || !config.siteKey || DRY || !Array.isArray(outbox) || !outbox.length) return;
+  craftState.sentTips = craftState.sentTips || {};
+  const key = t => `${t.by}|${t.d}|${t.b}|${t.r}|${t.at}`;
+  const fresh = outbox.filter(t => t && t.d && t.b && t.r && t.by && !craftState.sentTips[key(t)]);
+  if (!fresh.length) return;
+  try {
+    const res = await fetch(`${config.siteUrl.replace(/\/$/, '')}/api/journal/tips/ingest`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.siteKey}` }, body: JSON.stringify({ tips: fresh }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { console.error(`Boss tip upload failed (${res.status}): ${data.error || 'no details'}`); return; }
+    (data.results || []).forEach((r, i) => {
+      const t = fresh[i];
+      if (!t) return;
+      craftState.sentTips[key(t)] = Date.now();
+      if (!r.ok) console.error(`Tip for ${t.b} wasn't saved: ${r.error}`);
+    });
+    saveCraftState();
+    console.log(`Uploaded ${data.saved || 0} boss tip(s) written in game.`);
+  } catch (err) {
+    console.error(`Website unreachable for the boss tip upload (${err.message}).`);
+  }
+}
+
 // Item tooltips the addon read in game (for the website's hover cards) -> website.
 async function uploadItemTips(tips) {
   if (!config.siteUrl || !config.siteKey || DRY || !tips) return;
@@ -531,6 +558,7 @@ async function check() {
     await sendCraftRequests(db && db.craftRequests);
     await uploadMembers(db && db.member);
     await uploadItemTips(db && db.itemTips);
+    await uploadBossTips(db && db.tipOutbox);
     await uploadRares(db && db.rareSightings, db && db.member && Object.keys(db.member)[0]);
     await postBoardAsks(db && db.boardAsks);
     await postNotes(db && db.notes);

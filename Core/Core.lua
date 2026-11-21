@@ -530,8 +530,11 @@ SlashCmdList.FOXDEN = function(msg)
     if ns.QuestReport then ns.QuestReport() end
   elseif msg == "marktest" then
     if ns.MarkTest then ns.MarkTest() end
-  elseif msg == "maptest" then
+  elseif msg == "maptest" or msg:match("^maptest ") then
     if ns.MapTest then ns.MapTest() end
+    -- and the dungeon map lookup: the one named, else the one open in the Journal
+    local name = msg:match("^maptest%s+(.+)$") or (ns.JournalDungeon and ns.JournalDungeon())
+    if name and ns.DungeonMapReport then ns.DungeonMapReport(name) end
   elseif msg == "levelup" then
     if ns.ShowLevelUp then ns.ShowLevelUp(UnitLevel("player"), { str = 3, agi = 2, sta = 4, int = 1, spi = 1, hp = 22, mp = 30 }, 2700, true) end
   elseif msg == "note" or msg == "notes" then

@@ -1,5 +1,12 @@
 # Foxden
 
+## 2.3.3
+
+- **No more "No player named '…-' is currently playing" spam.** When Foxden passed a run to a guildmate for the website, it could address them with an empty realm ("Foxwarrior-"), which the server rejects, once per piece of the run. It now whispers the plain name. Same fix for the whisper Foxden sends when you ask a crafter to make something.
+- **Dungeon maps:** each dungeon's page shows its map with every floor, falling back to the game's own map pictures. Hover a boss for its loot, click for the full loot list.
+- **Boss pins:** place pins on a dungeon map and share them with the guild.
+- **Write boss tips in game:** Dungeons → a boss → **Write a tip**. Pick Tank, DPS, Healer or Everyone and save; the companion app sends it to the website with your character's name, and it shows for the whole guild after their next update. Yours shows straight away as "on its way". Same rules as the website: 600 characters, no links; removing a tip is still for officers, on the website.
+
 ## 2.3.2
 
 - **The game's quest tracker (and EllesmereUI's) stays hidden** when **Hide the game's quest tracker** is on. It kept coming back: Edit Mode puts the game's tracker back on screen, and EllesmereUI redraws its own. Foxden now uses EllesmereUI's own switch for hiding its tracker, and hides the game's again whenever something shows it.

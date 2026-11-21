@@ -328,6 +328,17 @@ end
 -- WoW hides script errors by default, so a broken mark builder would just show nothing.
 -- Errors go to FoxdenDB.questErrors (the last 10) and one line in chat per session.
 local warned = false
+local sessionStart = time and time() or 0
+
+-- The newest error from THIS session (older ones stay saved but are usually fixed by now).
+function Q.LastError()
+  local e = ns.db and ns.db.questErrors and ns.db.questErrors[1]
+  if not e or (e.at or 0) < sessionStart then return nil end
+  local ago = math.max(0, (time and time() or 0) - (e.at or 0))
+  local when = ago < 90 and "just now" or ago < 3600 and (math.floor(ago / 60) .. " min ago") or (math.floor(ago / 3600) .. " h ago")
+  return e.where .. ", " .. when .. ": " .. e.err
+end
+
 function Q.Try(where, fn, ...)
   local ok, err = pcall(fn, ...)
   if ok then return true end
@@ -365,8 +376,8 @@ function ns.QuestReport()
   say(string.format("Settings: map %s, dungeon quests %s, minimap %s, tracker %s, up to %d levels above you%s.",
     s.questPinsAll ~= false and "on" or "off", s.questPins ~= false and "on" or "off", s.questMinimap ~= false and "on" or "off",
     s.questTracker ~= false and "on" or "off", ahead(), showGrey() and ", grey quests shown" or ""))
-  local errs = ns.db and ns.db.questErrors
-  if errs and errs[1] then say("Last error (" .. errs[1].where .. "): " .. errs[1].err) else say("No errors.") end
+  local last = Q.LastError()
+  if last then say("Last error (" .. last .. ")") else say("No errors since you logged in.") end
 end
 
 -- ---- XP: what a quest gives you -------------------------------------------------------

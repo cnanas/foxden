@@ -99,6 +99,181 @@ local function floors(uiMapID)
   return list
 end
 
+-- A dungeon's floors. Forever has no Encounter Journal, so this is how the Journal's Map tab
+-- finds a dungeon's map before anyone has run it:
+--   1. the game's map list, by name (one pass over the map IDs, the first time a map is asked for)
+--   2. the classic dungeon map pictures that ship with the game client (Interface\WorldMap\<Folder>\<Folder><n>_1..12,
+--      a 4 x 3 grid of 256px tiles), for when the map API has no art for the floor.
+-- Each floor: { key, map = uiMapID or nil, name, tiles = path prefix or nil }.
+
+-- Game client folder names, floor counts and (where they are fixed) floor names. Keys are ns.Slug(name).
+local CLIENT_MAPS = {
+  ["ragefire-chasm"] = { "Ragefire", 1 },
+  ["wailing-caverns"] = { "WailingCaverns", 1 },
+  ["deadmines"] = { "TheDeadmines", 2, { "The Deadmines", "Ironclad Cove" } },
+  ["shadowfang-keep"] = { "ShadowfangKeep", 7 },
+  ["blackfathom-deeps"] = { "BlackFathomDeeps", 3 },
+  ["stormwind-stockade"] = { "TheStockade", 1 },
+  ["stockade"] = { "TheStockade", 1 },
+  ["gnomeregan"] = { "Gnomeregan", 4 },
+  ["razorfen-kraul"] = { "RazorfenKraul", 1 },
+  ["scarlet-monastery"] = { "ScarletMonastery", 4, { "Graveyard", "Library", "Armory", "Cathedral" } },
+  ["razorfen-downs"] = { "RazorfenDowns", 1 },
+  ["uldaman"] = { "Uldaman", 2 },
+  ["zul-farrak"] = { "ZulFarrak", 1 },
+  ["maraudon"] = { "Maraudon", 2 },
+  ["sunken-temple"] = { "TheTempleOfAtalHakkar", 1 },
+  ["temple-of-atal-hakkar"] = { "TheTempleOfAtalHakkar", 1 },
+  ["blackrock-depths"] = { "BlackrockDepths", 2, { "Detention Block", "Shadowforge City" } },
+  ["blackrock-spire"] = { "BlackrockSpire", 7 },
+  ["dire-maul"] = { "DireMaul", 6, { "Gordok Commons", "Capital Gardens", "Court of the Highborne", "Prison of Immol'thar", "Warpwood Quarter", "Shrine of Eldretharr" } },
+  ["scholomance"] = { { "ScholomanceOLD", "Scholomance" }, 4 },
+  ["stratholme"] = { "Stratholme", 2 },
+  ["molten-core"] = { "MoltenCore", 1 },
+  ["onyxia-s-lair"] = { "OnyxiasLair", 1 },
+  ["blackwing-lair"] = { "BlackwingLair", 4 },
+  ["zul-gurub"] = { "ZulGurub", 1 },
+  ["ruins-of-ahn-qiraj"] = { "RuinsofAhnQiraj", 1 },
+  ["ahn-qiraj-temple"] = { "AhnQiraj", 3 },
+  ["naxxramas"] = { "Naxxramas", 6 },
+}
+-- names the game's map list may use instead of ours
+local ALIASES = {
+  ["deadmines"] = { "the-deadmines" }, ["stormwind-stockade"] = { "the-stockade", "stockade" },
+  ["sunken-temple"] = { "temple-of-atal-hakkar" }, ["ahn-qiraj-temple"] = { "ahn-qiraj", "temple-of-ahn-qiraj" },
+}
+
+-- Does a texture file exist? SetTexture says so on current clients (older ones return nothing: assume yes).
+local probe
+local function fileExists(path)
+  if not CreateFrame then return true end
+  probe = probe or CreateFrame("Frame"):CreateTexture()
+  local ok, r = pcall(probe.SetTexture, probe, path)
+  if not ok then return false end
+  return r ~= false
+end
+ns.TextureExists = fileExists
+
+local byName, floorCache = nil, {}
+local function hasArt(map)
+  if not (C_Map and C_Map.GetMapArtLayerTextures) then return false end
+  local ok, t = call(C_Map.GetMapArtLayerTextures, map, 1)
+  return ok and type(t) == "table" and #t > 0
+end
+ns.MapHasArt = hasArt
+
+local function scanMaps()
+  byName = {}
+  if not (C_Map and C_Map.GetMapInfo) then return end
+  for id = 1, 5000 do
+    local ok, info = call(C_Map.GetMapInfo, id)
+    -- anything below a continent (3 zone, 4 dungeon, 5 micro, 6 orphan)
+    if ok and info and info.name and (info.mapType or 4) >= 3 then
+      local k = ns.Slug(info.name)
+      byName[k] = byName[k] or {}
+      table.insert(byName[k], { id = id, type = info.mapType })
+    end
+  end
+end
+
+-- The game's maps with this name, dungeon types first.
+local function mapIDs(key)
+  if not byName then scanMaps() end
+  local out = {}
+  local keys = { key }
+  for _, a in ipairs(ALIASES[key] or {}) do keys[#keys + 1] = a end
+  for _, k in ipairs(keys) do
+    for _, m in ipairs(byName[k] or {}) do if m.type == 4 or m.type == 5 then out[#out + 1] = m.id end end
+  end
+  for _, k in ipairs(keys) do
+    for _, m in ipairs(byName[k] or {}) do if m.type ~= 4 and m.type ~= 5 then out[#out + 1] = m.id end end
+  end
+  return out
+end
+
+local function clientFloors(key)
+  local c = CLIENT_MAPS[key]
+  if not c then return {} end
+  local folders = type(c[1]) == "table" and c[1] or { c[1] }
+  for _, folder in ipairs(folders) do
+    local list = {}
+    for n = 1, c[2] do
+      local prefix = "Interface\\WorldMap\\" .. folder .. "\\" .. folder .. n .. "_"
+      if fileExists(prefix .. "1") then
+        list[#list + 1] = { key = prefix, fid = folder .. n, tiles = prefix, name = c[3] and c[3][n] or (c[2] > 1 and ("Level " .. n) or nil), n = n }
+      end
+    end
+    if #list > 0 then return list end
+  end
+  return {}
+end
+
+function ns.DungeonFloors(name)
+  if not name then return {} end
+  local key = ns.Slug(name)
+  if floorCache[key] then return floorCache[key] end
+  -- 1. the game's map list: the first set of floors that all have art
+  local fromApi, firstFound = nil, nil
+  for _, id in ipairs(mapIDs(key)) do
+    local list = floors(id)
+    firstFound = firstFound or list
+    local ok = #list > 0
+    for _, f in ipairs(list) do if not hasArt(f.map) then ok = false end end
+    if ok then fromApi = list; break end
+  end
+  local best
+  if fromApi then
+    best = fromApi
+    for _, f in ipairs(best) do f.key = f.map end
+  else
+    -- 2. the client's map pictures; keep the game's map IDs (for boss pins) when the floors line up
+    best = clientFloors(key)
+    local ids = firstFound or {}
+    for i, f in ipairs(best) do
+      local api = #ids == #best and ids[i] or (#ids >= f.n and ids[f.n]) or nil
+      if api then f.map = api.map; if not (CLIENT_MAPS[key][3]) and api.name and #best > 1 then f.name = api.name end end
+    end
+    if #best == 0 and firstFound then best = firstFound; for _, f in ipairs(best) do f.key = f.map end end
+  end
+  for _, f in ipairs(best) do f.fid = f.fid or (f.map and ("m" .. f.map)) end
+  floorCache[key] = best
+  return best
+end
+
+-- /fox maptest (in the Journal's Map tab): what Foxden can find for a dungeon.
+function ns.DungeonMapReport(name)
+  local key = ns.Slug(name or "")
+  local say = function(t) ns.say(t, true) end
+  say("Map lookup for " .. tostring(name) .. ":")
+  local ids = mapIDs(key)
+  local bits = {}
+  for _, id in ipairs(ids) do
+    local ok, info = call(C_Map.GetMapInfo, id)
+    bits[#bits + 1] = id .. " (type " .. tostring(ok and info and info.mapType) .. ", art " .. (hasArt(id) and "yes" or "no") .. ")"
+  end
+  say("  Game maps with that name: " .. (#bits > 0 and table.concat(bits, ", ") or "none"))
+  local cf = clientFloors(key)
+  say("  Client map pictures: " .. (CLIENT_MAPS[key] and (#cf .. " of " .. CLIENT_MAPS[key][2] .. " found") or "none known for this dungeon"))
+  floorCache[key] = nil
+  local fl = ns.DungeonFloors(name)
+  say("  Floors shown: " .. #fl)
+end
+
+-- Where the game puts each boss on a floor: { [encounterID] = { m, x, y } } (x, y 0..1000).
+function ns.EncounterPins(floorList)
+  local out = {}
+  if not (C_EncounterJournal and C_EncounterJournal.GetEncountersOnMap) then return out end
+  for _, f in ipairs(floorList or {}) do
+    local ok, list = call(C_EncounterJournal.GetEncountersOnMap, f.map)
+    for _, e in ipairs(ok and type(list) == "table" and list or {}) do
+      if e.encounterID and type(e.mapX) == "number" and type(e.mapY) == "number" and not out[e.encounterID] then
+        out[e.encounterID] = { m = f.map, x = math.floor(e.mapX * 1000 + 0.5), y = math.floor(e.mapY * 1000 + 0.5) }
+      end
+    end
+  end
+  return out
+end
+
 local function pinsOn(floorList)
   local byEncounter = {}
   for _, f in ipairs(floorList) do
