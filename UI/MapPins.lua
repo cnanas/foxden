@@ -15,7 +15,7 @@ local function canvas()
 end
 
 local function classOf(key)
-  for _, m in ipairs(ns.db and ns.db.roster and ns.db.roster.members or {}) do if m.name == key then return m.class end end
+  for _, m in ipairs(ns.db and ns.db.roster and ns.db.roster.members or {}) do if ns.SenderKey(m.name) == key then return m.class end end
 end
 
 local function pin(i, parent)
@@ -26,6 +26,8 @@ local function pin(i, parent)
     p.ring = p:CreateTexture(nil, "ARTWORK"); p.ring:SetAllPoints(); p.ring:SetColorTexture(0, 0, 0, 0.9)
     p.dot = p:CreateTexture(nil, "OVERLAY"); p.dot:SetPoint("TOPLEFT", 2, -2); p.dot:SetPoint("BOTTOMRIGHT", -2, 2)
     for _, t in ipairs({ p.ring, p.dot }) do pcall(t.SetMask, t, "Interface\\CharacterFrame\\TempPortraitAlphaMask") end
+    p.icon = p:CreateTexture(nil, "OVERLAY", nil, 1); p.icon:SetPoint("TOPLEFT", 2, -2); p.icon:SetPoint("BOTTOMRIGHT", -2, 2); p.icon:Hide()
+    pcall(p.icon.SetMask, p.icon, "Interface\\CharacterFrame\\TempPortraitAlphaMask")
     p:EnableMouse(true)
     p:SetScript("OnEnter", function(s)
       GameTooltip:SetOwner(s, "ANCHOR_RIGHT")
@@ -49,7 +51,7 @@ local function refreshGuildPins()
   local w, h = child:GetWidth(), child:GetHeight()
   local now, n = GetServerTime(), 0
   for key, l in pairs(ns.GuildLocations and ns.GuildLocations() or {}) do
-    if key ~= ns.CharKey() then
+    if not ns.IsMe(key) then
       local x, y, ok = l.x / 1000, l.y / 1000, l.map == shown
       if not ok and shown and C_Map.GetMapRectOnMap then
         local okR, minX, maxX, minY, maxY = pcall(C_Map.GetMapRectOnMap, l.map, shown)
@@ -62,7 +64,12 @@ local function refreshGuildPins()
         n = n + 1
         local p = pin(n, child)
         p.name, p.note, p.zone, p.age = key:match("^[^-]+") or key, nil, l.zone, now - (l.at or now)
-        p.dot:SetColorTexture(UI.ClassColor(classOf(key)))
+        p:SetSize(18, 18)
+        local cls = classOf(key)
+        local r, g, b = UI.ClassColor(cls)
+        p.ring:SetColorTexture(r, g, b, 1) -- class-coloured ring around the class icon
+        p.dot:SetColorTexture(r, g, b)
+        p.icon:SetShown(UI.SetClassIcon(p.icon, cls))
         p:ClearAllPoints(); p:SetPoint("CENTER", child, "TOPLEFT", x * w, -y * h)
         p:SetFrameLevel((child:GetFrameLevel() or 1) + 20)
         p:Show()
@@ -88,6 +95,7 @@ local function refreshGuildPins()
     local p = pin(n, child)
     p.name, p.note, p.zone, p.age = "Note from " .. by, text ~= "" and text or nil, zone ~= "" and zone or nil, nil
     p.dot:SetColorTexture(UI.Accent())
+    p:SetSize(12, 12); p.icon:Hide(); p.ring:SetColorTexture(0, 0, 0, 0.9)
     p:ClearAllPoints(); p:SetPoint("CENTER", child, "TOPLEFT", x * w, -y * h)
     p:SetFrameLevel((child:GetFrameLevel() or 1) + 19)
     p:Show()
@@ -107,6 +115,10 @@ function ns.RefreshMapPins()
   if not child or not WorldMapFrame:IsShown() then return end
   if ns.Quests then ns.Quests.Try("guild pins", refreshGuildPins) else pcall(refreshGuildPins) end
   if ns.DrawQuestPins then ns.DrawQuestPins(child, WorldMapFrame.GetMapID and WorldMapFrame:GetMapID()) end
+  if ns.DrawGuildZones then
+    if ns.Quests then ns.Quests.Try("guild zones", ns.DrawGuildZones, child, WorldMapFrame.GetMapID and WorldMapFrame:GetMapID())
+    else pcall(ns.DrawGuildZones, child, WorldMapFrame.GetMapID and WorldMapFrame:GetMapID()) end
+  end
   if ns.DrawEntrancePins then
     if ns.Quests then ns.Quests.Try("dungeon entrances", ns.DrawEntrancePins, child, WorldMapFrame.GetMapID and WorldMapFrame:GetMapID())
     else pcall(ns.DrawEntrancePins, child, WorldMapFrame.GetMapID and WorldMapFrame:GetMapID()) end

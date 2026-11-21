@@ -280,7 +280,7 @@ local function lootOf(e, boss)
   end
   for _, id in ipairs(order) do loot[#loot + 1] = { id = id, seen = count[id], name = names[id] } end
   local n = {}
-  if #order == 0 then n[#n + 1] = "Nothing recorded yet. Foxden notes what this boss drops in your runs." end
+  if #order == 0 then n[#n + 1] = "Nothing recorded yet. Foxden learns what this boss drops from the guild's runs: everything your group gets from it, not just what you loot." end
   if listed and #listed > 0 then n[#n + 1] = "Loot tables for classic dungeons: QuestieDB (GPLv3)." end
   if e.static then n[#n + 1] = "Boss list: ForeverDungeonRoutes by Checkov23 (MIT)." end
   return loot, table.concat(n, "\n")
@@ -677,6 +677,13 @@ function page:Build(f)
     if b.e and b.boss and ns.OpenTipEditor then ns.OpenTipEditor(b.e.name, b.boss.name) end
   end)
   self.lootNote = UI.Text(self.detail, 11, C.faint); self.lootNote:SetWordWrap(true); self.lootNote:SetJustifyV("TOP")
+  -- the boss on Wowhead (its loot, guides, comments): a link to copy, nothing read from there
+  self.webBtn = UI.Button(self.detail, "Look it up online", 140, 24, function(b)
+    self.webOpen = not self.webOpen; ns.RefreshUI()
+  end)
+  self.webBox = UI.CopyBox(self.detail, 300)
+  self.webHint = UI.Text(self.detail, 11, C.faint); self.webHint:SetWordWrap(true)
+  self.webHint:SetText("Wowhead's WoW Forever page for this boss: its loot, guides and comments. Click the box, press Ctrl+C, then paste it in your browser.")
 
   -- Map
   self.mapPanel = panel(f)
@@ -945,9 +952,25 @@ function page:ShowBoss(e, boss)
     y = y - 10 - (self.body:GetStringHeight() or 0)
     self.tipBtn.e, self.tipBtn.boss = e, boss
     self.tipBtn:ClearAllPoints(); self.tipBtn:SetPoint("TOPLEFT", 0, y - 10)
+    self.webBtn:ClearAllPoints(); self.webBtn:SetPoint("LEFT", self.tipBtn, "RIGHT", 8, 0)
+    self.webBtn.label:SetText(self.webOpen and "Hide the link" or "Look it up online")
     y = y - 10 - 24
+    if self.webOpen then
+      local npc
+      for _, sb in ipairs(e.static and e.static.bosses or {}) do if sb.name == boss.name then npc = sb.npc end end
+      local slug = tostring(boss.name):lower():gsub("['’]", ""):gsub("[^%w]+", "-"):gsub("^%-+", ""):gsub("%-+$", "")
+      local url = npc and ("https://www.wowhead.com/forever/npc=" .. npc .. "/" .. slug)
+        or ("https://www.wowhead.com/forever/search?q=" .. tostring(boss.name):gsub(" ", "+"))
+      self.webBox:SetWidth(w); self.webBox:SetLink(url)
+      self.webBox:ClearAllPoints(); self.webBox:SetPoint("TOPLEFT", 0, y - 8); y = y - 8 - 26
+      self.webHint:SetWidth(w); self.webHint:ClearAllPoints(); self.webHint:SetPoint("TOPLEFT", 0, y - 4)
+      y = y - 4 - (self.webHint:GetStringHeight() or 14)
+    end
   end
   self.tipBtn:SetShown(boss ~= nil)
+  self.webBtn:SetShown(boss ~= nil)
+  self.webBox:SetShown(boss ~= nil and self.webOpen == true)
+  self.webHint:SetShown(boss ~= nil and self.webOpen == true)
   self.lootNote:SetShown(note ~= nil and note ~= "")
   if self.lootNote:IsShown() then
     self.lootNote:SetWidth(w); self.lootNote:SetText(note)

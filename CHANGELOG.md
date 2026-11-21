@@ -1,5 +1,13 @@
 # Foxden
 
+## 2.3.8
+
+- **Guildmates' zones on the world map:** everyone online, even without Foxden, as a badge on their zone with how many are there (names and levels on hover). The game only tells addons the zone, not the spot; guildmates who share their location with Foxden are still exact dots. Someone inside a dungeon shows at its entrance. Turn it off in Settings (**Guildmates' zones on the world map**).
+- **Class icons** for guildmates on the Guild page map and the world map, instead of letters and plain dots.
+- **Fixed: the same guildmate showing more than once** on the Guild page map (old saved locations under a second name are merged).
+- **Boss loot learns from the whole group:** everything anyone in your group gets from a boss now goes on that boss's loot list, not only what you loot yourself. The new dungeons fill in as the guild runs them.
+- **Look it up online** on every boss: a Wowhead link to copy, for its loot, guides and comments.
+
 ## 2.3.7
 
 - **Boss icons on dungeon maps for 12 dungeons**, from Blizzard's own boss positions: Wailing Caverns, Blackfathom Deeps, Razorfen Kraul, Gnomeregan, Razorfen Downs, Uldaman, Zul'Farrak, Maraudon, Sunken Temple, Blackrock Depths, Dire Maul and Stratholme. Hover a boss for its loot, click for the loot list. Others still need **Place bosses** once (it's shared with the guild).

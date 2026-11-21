@@ -24,14 +24,16 @@ local function pinsOn(cont)
   local atlas, pins = ns.db and ns.db.atlas, {}
   if not atlas then return pins end
   local now = GetServerTime()
-  for key, l in pairs(ns.db.locations or {}) do
+  local classOf = {}
+  for _, m in ipairs(ns.db.roster and ns.db.roster.members or {}) do classOf[ns.SenderKey(m.name)] = m.class end
+  for key, l in pairs(ns.LocationsNewerThan and ns.LocationsNewerThan(7 * 86400) or ns.db.locations or {}) do
     if atlas.maps and not atlas.maps[l.map] and ns.AtlasEnsure then ns.AtlasEnsure(l.map) end
     local z = atlas.maps and atlas.maps[l.map]
     if z and z.cont == cont and type(l.x) == "number" and now - (l.at or 0) < 7 * 86400 then
       local name = key:match("^[^-]+") or key
       pins[#pins + 1] = {
         x = z.l + (z.r - z.l) * l.x / 1000, y = z.t + (z.b - z.t) * l.y / 1000,
-        key = key, label = name, n = name:sub(1, 1),
+        key = key, label = name, n = name:sub(1, 1), class = classOf[key] or (ns.IsMe(key) and select(2, UnitClass("player"))) or nil,
         sub = (l.zone or z.name or "") .. ", " .. agoText(l.at), on = now - (l.at or 0) < 600,
       }
     end

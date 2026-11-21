@@ -358,6 +358,17 @@ function UI.Num(n)
   return tostring(math.floor(n + 0.5))
 end
 
+-- A class's icon on a texture (the game's class icon sheet). Returns false for an unknown class.
+function UI.SetClassIcon(tex, class)
+  local c = class and CLASS_ICON_TCOORDS and CLASS_ICON_TCOORDS[class]
+  if not c then return false end
+  tex:SetTexture("Interface\\Glues\\CharacterCreate\\UI-CharacterCreate-Classes")
+  -- trim the sheet's border a little
+  local dx, dy = (c[2] - c[1]) * 0.06, (c[4] - c[3]) * 0.06
+  tex:SetTexCoord(c[1] + dx, c[2] - dx, c[3] + dy, c[4] - dy)
+  return true
+end
+
 function UI.ClassColor(class)
   local c = class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
   if c then return c.r, c.g, c.b end

@@ -158,8 +158,11 @@ local rL = add(UI.Toggle(panel, CONTENT_W, "Share my location with the guild",
     if ns.SetShareLocation then ns.SetShareLocation(v) else ns.settings.shareLocation = v end
     if ns.RefreshUI then ns.RefreshUI() end
   end), rO)
+local rLz = add(UI.Toggle(panel, CONTENT_W, "Guildmates' zones on the world map",
+  "Everyone online, even without Foxden: a badge on each zone with how many are there (names on hover). The game only says the zone.",
+  get("guildZones"), function(v) ns.settings.guildZones = v; if ns.RefreshMapPins then ns.RefreshMapPins() end end), rL)
 
-local sK = section("Keys", rL)
+local sK = section("Keys", rLz)
 local rK = add(UI.KeyBind(panel, CONTENT_W, "Fishing key",
   "Press it to cast Fishing. Also in the game's Key Bindings under AddOns > Foxden.", ns.FISH_BINDING), sK, true)
 

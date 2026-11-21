@@ -2,7 +2,7 @@
 -- (Forever's in-game journal is empty). When a boss fight starts Foxden notes the
 -- boss's NPC ID; anything green or better looted from that boss's corpse is recorded.
 --
--- run.loot = { { e = encounterID, b = bossName, i = itemID, q = quality }, ... }
+-- run.loot = { { e = encounterID, b = bossName, i = itemID, q = quality, g = true when a groupmate got it }, ... }
 --
 -- Also everything you and your group looted during the run, from the game's "receives
 -- loot" chat lines and its boss-loot event (for the run summary and the Loot tab):
@@ -119,6 +119,15 @@ local function bossFor(run, itemID)
   end
 end
 
+-- An item from a boss that someone in the group got also goes on that boss's loot list
+-- (run.loot, which the journal and the website read), not only what you looted yourself.
+local function toBossLoot(run, itemID, boss, q)
+  if not (boss and itemID) or (q and q < 2) then return end -- greens and better, like corpse loot
+  run.loot = run.loot or {}
+  for _, l in ipairs(run.loot) do if l.i == itemID and l.b == boss then return end end
+  run.loot[#run.loot + 1] = { b = boss, i = itemID, q = q, g = true }
+end
+
 -- One item someone got. from: "chat" or "boss" (the two can report the same item: merged).
 local function addGot(run, itemID, link, count, who, boss, from)
   run.got = run.got or {}
@@ -127,10 +136,13 @@ local function addGot(run, itemID, link, count, who, boss, from)
     if g.i == itemID and g.w == who and not g[from] and (g.chat or g.boss) then
       g[from] = true
       g.b = g.b or boss
+      toBossLoot(run, itemID, g.b, g.q)
       return
     end
   end
-  run.got[#run.got + 1] = { i = itemID, q = qualityOf(link, itemID), n = count, w = who, b = boss or bossFor(run, itemID), [from] = true }
+  local g = { i = itemID, q = qualityOf(link, itemID), n = count, w = who, b = boss or bossFor(run, itemID), [from] = true }
+  run.got[#run.got + 1] = g
+  toBossLoot(run, itemID, g.b, g.q)
   ns.Changed()
 end
 
@@ -143,7 +155,14 @@ local function onLootChat(run, text, player)
       if p[2] then who, link, count = UnitName("player"), a, b else who, link, count = a, b, c end
       local itemID = type(link) == "string" and tonumber(link:match("item:(%d+)"))
       if not itemID then return end
-      addGot(run, itemID, link, tonumber(count) or 1, shortName(who) or shortName(player) or "?", nil, "chat")
+      -- a blue or better right after a boss kill: almost certainly that boss's (trash rarely drops them)
+      local boss
+      local k = run._lastKill
+      if k and GetTime() - k.at <= 90 then
+        local q = qualityOf(link, itemID)
+        if q and q >= 3 then boss = k.name end
+      end
+      addGot(run, itemID, link, tonumber(count) or 1, shortName(who) or shortName(player) or "?", boss, "chat")
       return
     end
   end
@@ -178,11 +197,23 @@ ns.RegisterModule({
       C_Timer.After(1, function() if ns.GetCurrentRun() == run then noteBoss(run, encounterID, name) end end)
     end,
     LOOT_OPENED = function(_, run) onLoot(run) end,
+    ENCOUNTER_END = function(_, run, encounterID, name, _, _, success)
+      if run and success == 1 and not ns.IsSecret(encounterID) then run._lastKill = { name = name, at = GetTime() } end
+    end,
     CHAT_MSG_LOOT = function(_, run, text, player) onLootChat(run, text, player) end,
     -- a boss item someone in the group got (newer clients)
-    ENCOUNTER_LOOT_RECEIVED = function(_, run, _, itemID, link, quantity, player)
+    ENCOUNTER_LOOT_RECEIVED = function(_, run, encounterID, itemID, link, quantity, player)
       if not run or ns.IsSecret(itemID) or type(itemID) ~= "number" then return end
       local boss = bossFor(run, itemID)
+      if not boss and type(encounterID) == "number" and not ns.IsSecret(encounterID) then
+        -- the encounter the game names: as this run logged it, else as Foxden's boss list calls it
+        for _, e in ipairs(run._encounterLog or {}) do if e.id == encounterID then boss = e.name end end
+        if not boss then for _, d in pairs(ns.Dungeons or {}) do
+          for _, b in ipairs(d.bosses or {}) do
+            for _, id in ipairs(b.ids or {}) do if id == encounterID then boss = b.name end end
+          end
+        end end
+      end
       if not boss then
         local log = run._encounterLog
         boss = log and log[#log] and log[#log].name

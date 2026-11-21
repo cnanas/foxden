@@ -12,7 +12,7 @@ ns.SCHEMA = 3
 
 ns.DEFAULTS = { track = true, chat = true, remind = true, sendNow = true, keep = 100, scale = 1, share = true, offer = false, shareLocation = true, welcomed = false, copyPopup = true, runSummary = true, levelCard = true, shareLevelUps = true, guildDings = true, learnAll = true, levelScreenshot = false, tracker = true, minimapButton = true, rareAlerts = true, questPins = true, questPinsAll = true, questMinimap = true, questTracker = true, hideGameTracker = true,
   questAhead = 3, questShowGrey = false, questMarkSize = 18, questTrackerFont = 12, questTrackerWidth = 270, questTrackerBg = 0.45,
-  questTrackerLocked = false, questShowDoneObj = true, questTrackerItems = true, itemSource = true, auctionPrices = true, dungeonWorldMap = true, entrancePins = true }
+  questTrackerLocked = false, questShowDoneObj = true, questTrackerItems = true, itemSource = true, auctionPrices = true, dungeonWorldMap = true, guildZones = true, entrancePins = true }
 ns.settings = setmetatable({}, { __index = ns.DEFAULTS }) -- replaced at load
 
 local db, run
@@ -27,20 +27,30 @@ local say = ns.say
 function ns.IsSecret(v) return issecretvalue ~= nil and issecretvalue(v) end
 
 -- "Name-Realm" for the logged-in character (realm without spaces, as the game writes it in chat)
+-- The realm without spaces. Forever can report an empty normalized realm name; fall back to the
+-- realm name then, so keys never end in a bare "-".
+local function realmKey()
+  local r = GetNormalizedRealmName and GetNormalizedRealmName()
+  if not r or r == "" then r = (GetRealmName and GetRealmName() or ""):gsub("%s", "") end
+  return r
+end
+ns.RealmKey = realmKey
 function ns.CharKey()
   local name = UnitName("player")
-  local realm = (GetNormalizedRealmName and GetNormalizedRealmName()) or (GetRealmName() or ""):gsub("%s", "")
-  return name .. "-" .. realm
+  local realm = realmKey()
+  return realm ~= "" and (name .. "-" .. realm) or name
 end
 
 -- A name from chat, addon messages or the guild roster, as a CharKey ("Name-Realm"). Forever
 -- adds a second name ("Foxwarrior Forever-Realm", "Valourel Blackrose"); the character is the first.
 function ns.SenderKey(sender)
   if type(sender) ~= "string" or ns.IsSecret(sender) then return sender end
+  sender = sender:gsub("%-$", "") -- "Name-" (an empty realm) is plain "Name"
   local name, realm = sender:match("^([^-]+)-(.+)$")
   name = name or sender
-  realm = realm or (GetNormalizedRealmName and GetNormalizedRealmName()) or (GetRealmName() or ""):gsub("%s", "")
-  return (name:match("^%S+") or name) .. "-" .. realm
+  realm = realm or realmKey()
+  name = name:match("^%S+") or name
+  return realm ~= "" and (name .. "-" .. realm) or name
 end
 
 -- Is this name (roster, chat, addon message, website) the character you're playing?

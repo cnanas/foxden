@@ -2,7 +2,7 @@
 -- pins. Used by the Journal page.
 --   local m = UI.MapCanvas(parent)
 --   m:Draw(uiMapID, width, height, pins, tiles)   tiles = client map picture prefix ("Interface\\WorldMap\\X\\X1_"), used when the map API has no art
---   pins = { { x = 0..1000, y = 0..1000, label, sub, n, on }, ... }
+--   pins = { { x = 0..1000, y = 0..1000, label, sub, n, on, class }, ... }   class: a class icon instead of n
 --   returns true if the floor had map art
 
 local _, ns = ...
@@ -44,6 +44,7 @@ function UI.MapCanvas(parent)
       p.ring = p:CreateTexture(nil, "BORDER"); p.ring:SetPoint("TOPLEFT", -1, 1); p.ring:SetPoint("BOTTOMRIGHT", 1, -1); p.ring:SetColorTexture(0, 0, 0, 0.85)
       p.bg = p:CreateTexture(nil, "ARTWORK"); p.bg:SetAllPoints()
       p.num = UI.Text(p, 11, { 0.05, 0.06, 0.08, 1 }, "CENTER"); p.num:SetPoint("CENTER")
+      p.icon = p:CreateTexture(nil, "OVERLAY"); p.icon:SetPoint("TOPLEFT", 1, -1); p.icon:SetPoint("BOTTOMRIGHT", -1, 1); p.icon:Hide()
       p:RegisterForClicks("LeftButtonUp", "RightButtonUp")
       p:SetScript("OnEnter", function(s)
         GameTooltip:SetOwner(s, "ANCHOR_RIGHT")
@@ -103,6 +104,10 @@ function UI.MapCanvas(parent)
       f:ClearAllPoints(); f:SetPoint("CENTER", self, "TOPLEFT", p.x / 1000 * w, -p.y / 1000 * h)
       if p.on then f.bg:SetColorTexture(r, g, b, 1) else f.bg:SetColorTexture(0.62, 0.65, 0.70, 1) end
       f.num:SetText(p.n or "")
+      -- a class icon instead of the number (guildmates); the ring shows how fresh it is
+      local icon = p.class and UI.SetClassIcon(f.icon, p.class)
+      f.icon:SetShown(icon and true or false); f.num:SetShown(not icon)
+      if icon then f.icon:SetDesaturated(not p.on); f.icon:SetAlpha(p.on and 1 or 0.6) end
       f:Show()
     end
     return hasArt

@@ -54,14 +54,21 @@ function ns.SetShareLocation(on)
   if on then C_Timer.After(1, tick) end
 end
 
--- Fresh guildmate positions: { [charKey] = { map, x, y, zone, at } }, older than 5 minutes left out.
-function ns.GuildLocations()
-  local out, now = {}, GetServerTime()
+-- Positions newer than maxAge seconds, one per character: { [charKey] = { map, x, y, zone, at } }.
+-- Older versions could save one character under several keys ("Name-", "Name Second-Realm",
+-- "Name-Realm"); the freshest wins.
+function ns.LocationsNewerThan(maxAge)
+  local best, now = {}, GetServerTime()
   for key, l in pairs(ns.db and ns.db.locations or {}) do
-    if now - (l.at or 0) <= STALE then out[key] = l end
+    if now - (l.at or 0) <= maxAge then
+      local k = ns.SenderKey(key)
+      if not best[k] or (best[k].at or 0) < (l.at or 0) then best[k] = l end
+    end
   end
-  return out
+  return best
 end
+-- Fresh guildmate positions, older than 5 minutes left out.
+function ns.GuildLocations() return ns.LocationsNewerThan(STALE) end
 
 local function onMessage(prefix, text, channel, sender)
   if prefix ~= PREFIX or channel ~= "GUILD" or ns.IsSecret(text) or ns.IsSecret(sender) then return end
