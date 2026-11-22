@@ -112,7 +112,7 @@ function page:Build(f)
 
   local note = CreateFrame("Frame", nil, b); note:SetSize(ROW_W, 60); note.Refresh = function() end
   local nt = UI.Text(note, 11, C.faint); nt:SetPoint("TOPLEFT", 0, -8); nt:SetWidth(ROW_W); nt:SetWordWrap(true)
-  nt:SetText("Quest data: QuestieDB by the Questie team (GPLv3), read from the QuestieDB addon when it's installed (it comes with Questie), else Foxden's own copy. Forever's new quests come from what your guild learns as they play. Running Questie as well shows its marks next to these: turn its map icons off if you see two of each.")
+  nt:SetText("Quest data: QuestieDB by the Questie team (GPLv3), built into Foxden (the QuestieDB addon isn't needed; when it's installed, Foxden reads its newest data instead). Forever's new quests come from what your guild learns as they play. Running Questie as well shows its marks next to these: turn its map icons off if you see two of each.")
   add(note, 4)
   self.last = last
 end

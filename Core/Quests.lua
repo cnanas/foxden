@@ -342,6 +342,7 @@ end
 function Q.Try(where, fn, ...)
   local ok, err = pcall(fn, ...)
   if ok then return true end
+  if ns.LogError then ns.LogError("quests: " .. tostring(where), err) end
   if ns.db then
     ns.db.questErrors = ns.db.questErrors or {}
     table.insert(ns.db.questErrors, 1, { at = time and time() or 0, where = where, err = tostring(err) })

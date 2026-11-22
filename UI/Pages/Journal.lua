@@ -1269,7 +1269,7 @@ function page:ShowTrash(e)
   for _, r in ipairs(self.trashRows) do r:Hide() end
   if not list then
     self.trashHead:SetText("Trash drops")
-    self.trashNote:SetText(stateNow == "missing" and "Trash drops come from the QuestieDB addon (it comes with Questie). Turn it on to see them."
+    self.trashNote:SetText(stateNow == "missing" and "No trash drops known for this dungeon yet."
       or "Reading QuestieDB for every dungeon's trash drops... a couple of seconds, once per session.")
     return
   end

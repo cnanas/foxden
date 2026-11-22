@@ -1,5 +1,16 @@
 # Foxden
 
+## 2.3.12
+
+### All in one
+- **Foxden works on its own from CurseForge.** No companion app and no other addons needed: recipes, materials and costs, the leveling planner, boss loot, quest rewards, dungeon quests, class trainer lists, rare timers and an auction price snapshot are built in. A weekly data update keeps them fresh, so keep Foxden updated (turn on Auto-update in the CurseForge app).
+- **QuestieDB is optional now:** dungeon entrance marks and trash drops are built in too. If it's installed, Foxden still reads its newest data.
+- The companion app is an extra: daily prices, website requests, and posting runs to Discord.
+
+### Also
+- **/fox errors** shows anything that went wrong in Foxden, with a box to copy it all for a report. **/fox selftest** checks every page, the themes, the pictures and the data.
+- **Fixed: "No player named '…' is currently playing"** for guildmates with a surname (WoW Forever): Foxden now whispers names exactly as the game writes them.
+
 ## 2.3.11
 
 - **Your stats** (Home → Your stats): this week or all time. Kills, deaths, quests, gold looted, levels and dungeon runs, plus fun facts: most killed, the enemy you died fighting most, your most dangerous zone, favourite ability, favourite zone, dungeon nemesis and fastest clear. Most of these start counting now; quests and levels come from the game's own records, so they go back to level 1.

@@ -98,7 +98,7 @@ local function whisper(to, item, name, qty, mats)
   for _, m in ipairs(mats or {}) do parts[#parts + 1] = ((m[2] or 1) * qty) .. "x " .. (m[3] or "?") end
   local msg = string.format("Hi! Could you make %dx %s for me? I'll bring the materials%s. Thanks!", qty, link or name, #parts > 0 and (" (" .. table.concat(parts, ", ") .. ")") or "")
   if #msg > 250 then msg = string.format("Hi! Could you make %dx %s for me? I'll bring the materials. Thanks!", qty, link or name) end
-  to = (to or ""):gsub("%-$", "")
+  to = ns.WhisperTarget and ns.WhisperTarget(to) or (to or ""):gsub("%-$", "")
   SendChatMessage(msg, "WHISPER", nil, to)
   ns.say("Whispered " .. to .. ".")
 end

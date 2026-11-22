@@ -165,7 +165,16 @@ local entrances
 function ns.DungeonEntrances()
   if entrances then return entrances end
   local L = _G.LibQuestieDB
-  if not (L and L.Support and L.Support.Get) then return {} end
+  if not (L and L.Support and L.Support.Get) then
+    -- no QuestieDB addon: Foxden's built-in copy (Data/QuestieExtra.lua), this faction's entrances
+    local mine = UnitFactionGroup and UnitFactionGroup("player") == "Horde" and "H" or "A"
+    local out = {}
+    for _, e in ipairs(ns.BuiltinEntrances or {}) do
+      if not e[6] or e[6] == mine then out[#out + 1] = { name = e[1], slug = ENTRANCE_ALIAS[e[2]] or e[2], map = e[3], x = e[4], y = e[5] } end
+    end
+    entrances = out
+    return out
+  end
   local ok, zdb = pcall(L.Support.Get, "ZoneDB")
   local list = ok and type(zdb) == "table" and type(zdb.private) == "table" and zdb.private.dungeons
   if type(list) ~= "table" then return {} end
@@ -206,14 +215,12 @@ local function start()
     if tries < 8 then C_Timer.After(3, start) end
   end
   if not L then
+    -- no QuestieDB addon: Foxden's built-in copy of its Forever data does the job (no need to nag)
     if ns.QuestieDBState() == "off" then
-      ns.QuestSource.note = "the QuestieDB addon is turned off: turn it on for Forever's new zones (Questie itself can stay off)"
-      if tries == 1 and ns.say then
-        C_Timer.After(4, function() ns.say("Quest marks for Forever's new zones need the QuestieDB addon, which is turned off. Turn it on in AddOns, or click \"Turn on QuestieDB\" on Foxden's Quests page. Questie itself can stay off.", true) end)
-      end
+      ns.QuestSource.note = "Foxden's built-in quest data (the QuestieDB addon is turned off; turning it on can add the newest fixes)"
       return
     end
-    return again("the QuestieDB addon isn't installed (it comes with Questie)")
+    return again("Foxden's built-in quest data (QuestieDB isn't installed, and isn't needed)")
   end
   if not (L.Quest and L.Quest.GetAllIds and L.Quest.Get and L.Npc and L.Npc.Get and L.Support and L.Support.Get) then
     return again("QuestieDB is a version Foxden can't read")

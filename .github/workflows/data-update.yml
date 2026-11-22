@@ -1,0 +1,69 @@
+# Weekly data update: rebuilds Foxden's built-in game data (recipes, materials, rewards, dungeon
+# quests, loot, trainer lists, an auction price snapshot; dungeon entrances and trash drops from
+# QuestieDB) and, if anything changed, releases it as a data-only version (e.g. 2.3.12.20261124)
+# to CurseForge, Wago and GitHub, so players get fresh data just by keeping Foxden updated.
+# Tuesdays after the weekly reset; run it by hand from the Actions tab too.
+# Secrets: FOXDEN_SITE_URL and FOXDEN_EXPORT_KEY (the guild website's export), CF_API_KEY, WAGO_API_TOKEN.
+name: Weekly data update
+
+on:
+  schedule:
+    - cron: "0 16 * * 2"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only rebuild and show what changed; don't release"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  data:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Rebuild the built-in data
+        env:
+          FOXDEN_SITE_URL: ${{ secrets.FOXDEN_SITE_URL }}
+          FOXDEN_EXPORT_KEY: ${{ secrets.FOXDEN_EXPORT_KEY }}
+          CATALOG_OUT: ${{ github.workspace }}/Data/Catalog.lua
+          ADDON_DIR: ${{ github.workspace }}
+        run: |
+          node .github/scripts/build-catalog.mjs
+          python3 .github/scripts/build-questie-extra.py
+      - name: Anything new?
+        id: diff
+        run: |
+          # the catalog's date line changes every run; count it as new only if the data itself changed
+          if git diff --quiet -I '^-- from ' -- Data/; then echo "changed=false" >> "$GITHUB_OUTPUT"; else echo "changed=true" >> "$GITHUB_OUTPUT"; fi
+      - name: What changed
+        run: git diff --stat -- Data/ | tail -3
+      - name: Version, changelog, tag
+        if: steps.diff.outputs.changed == 'true' && inputs.dry_run != true
+        id: ver
+        run: |
+          base=$(sed -n 's/^## Version: \([0-9]*\.[0-9]*\.[0-9]*\).*/\1/p' Foxden.toc)
+          ver="$base.$(date -u +%Y%m%d)"
+          sed -i "s/^## Version: .*/## Version: $ver/" Foxden.toc
+          { echo "# Foxden"; echo; echo "## $ver"; echo; echo "- Weekly data update: auction prices, recipes, loot and quest data as of $(date -u +'%b %-d, %Y')."; echo; tail -n +2 CHANGELOG.md; } > CHANGELOG.new && mv CHANGELOG.new CHANGELOG.md
+          git config user.name "Foxden data bot"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Data/Catalog.lua Data/QuestieExtra.lua Foxden.toc CHANGELOG.md
+          git commit -m "Foxden $ver: weekly data update"
+          git tag "v$ver"
+          git push origin HEAD "v$ver"
+          echo "ver=$ver" >> "$GITHUB_OUTPUT"
+      # a tag pushed by a workflow doesn't start the release workflow, so package and upload here
+      - uses: BigWigsMods/packager@v2
+        if: steps.diff.outputs.changed == 'true' && inputs.dry_run != true
+        env:
+          CF_API_KEY: ${{ secrets.CF_API_KEY }}
+          WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
+          GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}

@@ -87,8 +87,17 @@ function ns.Slug(name)
   return (tostring(name or ""):lower():gsub("^the%s+", ""):gsub("['’]", ""):gsub("[^%w]+", "-"):gsub("^%-+", ""):gsub("%-+$", ""))
 end
 
--- The companion's snapshot of the website (craft list, costs, requests), if it has written one.
-function ns.Site()
+-- The website data pages read: the companion's snapshot of your guild website when it has
+-- written one (Data/SiteData.lua), else the general game data built into Foxden
+-- (Data/Catalog.lua: recipes, materials, rewards, dungeon quests, loot, trainers, a price
+-- snapshot; marked bundled = true). So Recipes, the planner and the rest work without the companion.
+function ns.SiteLive()
   local s = FoxdenSiteData
   if type(s) == "table" and s.v == 1 then return s end
+end
+function ns.Site()
+  local s = ns.SiteLive()
+  if s then return s end
+  local c = FoxdenCatalog
+  if type(c) == "table" and c.v == 1 then return c end
 end

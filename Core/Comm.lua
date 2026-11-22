@@ -43,12 +43,32 @@ pump = function()
   end
 end
 
+-- Whisper targets. Foxden keys people as "Name-Realm" (first name only, ns.SenderKey), but the
+-- server only accepts a name the way it writes it: on Forever that can be "Valourel Blackrose" or
+-- "Valourel Blackrose-Realm" (surnames). So remember each name exactly as the game sends it (addon
+-- messages, the guild roster) and whisper that. ("No player named 'Valourel'" otherwise.)
+local exactName = {}
+function ns.RememberName(raw)
+  if type(raw) ~= "string" or raw == "" or ns.IsSecret(raw) or not ns.SenderKey then return end
+  exactName[ns.SenderKey(raw)] = raw
+end
+function ns.WhisperTarget(target)
+  if type(target) ~= "string" or ns.IsSecret(target) then return target end
+  local key = ns.SenderKey and ns.SenderKey(target) or target
+  if exactName[key] then return exactName[key] end
+  for _, m in ipairs(ns.db and ns.db.roster and ns.db.roster.members or {}) do
+    if m.name and ns.SenderKey(m.name) == key then exactName[key] = m.name; return m.name end
+  end
+  return (target:gsub("%-$", "")) -- "Name-" (an empty realm) is plain "Name"
+end
+local listen = CreateFrame("Frame")
+listen:RegisterEvent("CHAT_MSG_ADDON")
+listen:SetScript("OnEvent", function(_, _, prefix, _, _, sender) if prefix == ns.PREFIX then ns.RememberName(sender) end end)
+
 function ns.Send(text, channel, target, urgent, done)
-  -- Forever can report an empty realm, which makes keys like "Foxwarrior-"; the server
-  -- rejects that as a whisper target ("No player named 'Foxwarrior-'"), so drop the dash.
-  if type(target) == "string" then
-    target = target:gsub("%-$", "")
-    if target == "" then return end
+  if channel == "WHISPER" then
+    target = ns.WhisperTarget(target)
+    if type(target) ~= "string" or target == "" then return end
   end
   local item = { text = text, channel = channel or "GUILD", target = target, done = done }
   if urgent then table.insert(queue, 1, item) else queue[#queue + 1] = item end

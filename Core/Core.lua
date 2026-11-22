@@ -575,6 +575,6 @@ SlashCmdList.FOXDEN = function(msg)
       if ok and text then say(text, true) end
     end
   else
-    say("/fox (dashboard) · /fox options · /fox price <item> · /fox status · /fox end · /fox send · /fox summary · /fox copy · /fox note · /fox trainer · /fox levelup · /fox maptest · /fox journaltest · /fox welcome", true)
+    say("/fox (dashboard) · /fox options · /fox price <item> · /fox errors · /fox selftest · /fox status · /fox end · /fox send · /fox summary · /fox copy · /fox note · /fox trainer · /fox levelup · /fox maptest · /fox journaltest · /fox welcome", true)
   end
 end

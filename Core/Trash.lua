@@ -20,7 +20,21 @@ function T.OnReady(fn) listeners[#listeners + 1] = fn end
 
 local function build()
   local L = _G.LibQuestieDB
-  if not (L and L.Npc and L.Npc.GetAllIds and L.Item and L.Item.GetAllIds and L.Support) then state = "missing"; return end
+  if not (L and L.Npc and L.Npc.GetAllIds and L.Item and L.Item.GetAllIds and L.Support) then
+    -- no QuestieDB addon: the same list, precomputed into Foxden (Data/QuestieExtra.lua)
+    if ns.BuiltinTrash then
+      bySlug = {}
+      for slug, list in pairs(ns.BuiltinTrash) do
+        local t = {}
+        for i, e in ipairs(list) do t[i] = { id = e[1], mobs = e[2] or {} } end
+        bySlug[slug] = t
+      end
+      state = "ready"
+      for _, fn in ipairs(listeners) do pcall(fn) end
+      return
+    end
+    state = "missing"; return
+  end
   local ok, zdb = pcall(L.Support.Get, "ZoneDB")
   local dungeons = ok and type(zdb) == "table" and type(zdb.private) == "table" and zdb.private.dungeons
   if type(dungeons) ~= "table" then state = "missing"; return end

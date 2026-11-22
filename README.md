@@ -2,7 +2,7 @@
 
 A guild companion addon for WoW Forever. It logs your dungeon runs, keeps a dungeon journal, tracks who in the guild can craft what, and shows the guild roster, all in one resizable window.
 
-Foxden works on its own in game. The optional companion app posts each run to your guild's Discord.
+Foxden works on its own in game: install it from CurseForge and that's it. No other addons are needed (QuestieDB is optional: Foxden has its quest data, dungeon entrances and trash drops built in). Recipes, the leveling planner, boss loot, quest rewards and auction prices are built in too, as of each release. The optional companion app adds fresh daily prices and posts each run to your guild's Discord.
 
 ## What it does
 
@@ -62,7 +62,7 @@ Check what it would post with `npm run dry-run`, then leave `npm start` running 
 
 ## Guild websites: coming soon
 
-Some pages in the window (Request, Costs and Requests) need a guild website: free craft requests between guildmates (you bring the materials), a shared boss journal with tips from your guild, and run pages. Guild websites are coming soon as a service. Everything else in Foxden works without one.
+Only the Requests page needs a guild website (free craft requests between guildmates: you bring the materials), along with the website's shared boss tips and run pages. Guild websites are coming soon as a service. Everything else in Foxden works without one.
 
 ## Free crafting, never real money
 

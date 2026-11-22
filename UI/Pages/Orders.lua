@@ -52,7 +52,7 @@ function page:Layout(w, h)
 end
 
 function page:Refresh()
-  local site = ns.Site()
+  local site = ns.SiteLive() -- requests live on your guild website (the built-in data has none)
   local has = site ~= nil
   for _, el in ipairs({ self.intro, self.list, self.foot, self.link }) do el:SetShown(has) end
   self.empty:SetShown(not has)

@@ -476,7 +476,8 @@ function UI.Guard(label, fn, ...)
   local ok, err = pcall(fn, ...)
   if not ok then
     local msg = label .. ": " .. tostring(err)
-    if not guardSeen[msg] then
+    if ns.LogError then ns.LogError(label, err) -- the error log says so in chat, once
+    elseif not guardSeen[msg] then
       guardSeen[msg] = true
       if ns.say then ns.say("|cffef6b6bSomething went wrong drawing " .. msg .. "|r", true) end
     end

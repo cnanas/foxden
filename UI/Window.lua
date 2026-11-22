@@ -518,7 +518,8 @@ local function build()
   W:SetScript("OnShow", function()
     W:SetScale(ns.settings.scale or 1)
     local site = ns.Site()
-    W.siteAge:SetText(site and ("Updated " .. ns.Ago(site.at)) or "No guild website yet")
+    -- your guild website's data (companion), or the game data built into Foxden
+    W.siteAge:SetText(site and (site.bundled and ("Built-in data, " .. date("%b %d", site.pricesAt or site.at or 0)) or ("Updated " .. ns.Ago(site.at))) or "No game data")
     ns.OpenPage(current and current.key or ns.settings.page or "overview")
     ticker = C_Timer.NewTicker(1, function()
       if ns.GetCurrentRun() and current and (current.key == "overview" or current.key == "runs") then refresh() end

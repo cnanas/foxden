@@ -37,13 +37,13 @@ local function fullName(sender)
 end
 
 function ns.IsCourier()
-  local s = ns.Site()
+  local s = ns.SiteLive()
   return s ~= nil and type(s.at) == "number" and GetServerTime() - s.at < FRESH
 end
 
 -- The guild website's address, from our own site data or a courier's announcement.
 function ns.SiteUrl()
-  local s = ns.Site()
+  local s = ns.SiteLive()
   if s and type(s.site) == "string" and s.site ~= "" then return s.site end
   return db and db.siteUrl or nil
 end
