@@ -240,6 +240,8 @@ local function build()
   panel.scroll = CreateFrame("ScrollFrame", nil, panel)
   panel.scroll:SetPoint("TOPLEFT", PAD, -50); panel.scroll:SetPoint("BOTTOMRIGHT", -PAD, 46)
   panel.body = CreateFrame("Frame", nil, panel.scroll); panel.body:SetSize(W - PAD * 2, 10)
+  -- the quest on Wowhead: a link to copy (the game can't open web pages)
+  panel.wh = UI.CopyBox(panel.body, W - PAD * 2)
   panel.scroll:SetScrollChild(panel.body)
   panel.scroll:EnableMouseWheel(true)
   panel.scroll:SetScript("OnMouseWheel", function(sf, d)
@@ -401,6 +403,15 @@ function ns.ShowQuestDetails(q, anchorTo)
     header("Description")
     add(clean(desc), 11, { 0.75, 0.77, 0.81, 1 }, 4)
   end
+
+  -- Wowhead
+  header("Wowhead")
+  local url = ns.QuestUrl and ns.QuestUrl({ q.id, q.title or "" })
+    or ("https://www.wowhead.com/forever/quest=" .. q.id)
+  panel.wh:ClearAllPoints(); panel.wh:SetPoint("TOPLEFT", 0, -panel.y); panel.wh:SetWidth(W - PAD * 2)
+  panel.wh:SetLink(url); panel.wh:Show()
+  panel.y = panel.y + 30
+  add("Guides and comments for this quest. Click the box, press Ctrl+C, paste it in your browser.", 10, C.faint, 4)
 
   -- the guild's note
   local notes = site and type(site.questNotes) == "table" and site.questNotes

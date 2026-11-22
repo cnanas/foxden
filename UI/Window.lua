@@ -30,7 +30,7 @@ end
 
 -- The sidebar: four places, each a set of pages shown as tabs.
 local NAV = {
-  { key = "home", label = "Home", icon = "Interface\\Icons\\Spell_Nature_SpiritWolf", pages = { "overview", "trainer", "wishlist", "notes" } },
+  { key = "home", label = "Home", icon = "Interface\\Icons\\Spell_Nature_SpiritWolf", pages = { "overview", "facts", "trainer", "wishlist", "notes" } },
   { key = "dungeons", label = "Dungeons", icon = "Interface\\Icons\\INV_Misc_Head_Dragon_01", pages = { "journal", "runs" } },
   { key = "crafting", label = "Crafting", icon = "Interface\\Icons\\Trade_BlackSmithing", pages = { "craftoverview", "recipes", "planner", "crafters", "orders" } },
   { key = "guild", label = "Guild", icon = "Interface\\Icons\\INV_Shirt_GuildTabard_01", pages = { "guildoverview", "roster", "rares", "leveling", "players" } },

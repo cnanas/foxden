@@ -69,7 +69,7 @@ function page:Build(f)
   self.lfg.onClick = function() ns.OpenPage("journal") end
 
   self.runs = UI.Tile(b)
-  self.runs.onClick = function() ns.OpenPage("runs") end
+  self.runs.onClick = function() ns.OpenPage("facts") end
 end
 
 function page:Layout(w, h)
@@ -249,23 +249,23 @@ function page:Refresh()
     self.lfg:Set(lf)
   end)
 
-  UI.Guard("Home (recent runs)", function()
-    -- recent runs
-    local runs = {}
-    local live = ns.LiveRun()
-    if live then runs[1] = { run = live, live = true } end
-    local saved = ns.GetRuns()
-    for i = #saved, 1, -1 do runs[#runs + 1] = { run = saved[i], id = saved[i].id } end
-    local week, now = 0, GetServerTime()
-    for _, r in ipairs(saved) do if (r.endTime or 0) > now - 7 * 86400 then week = week + 1 end end
-    local rr = { title = "Your runs", icon = "Interface\\Icons\\INV_Misc_PocketWatch_01", big = tostring(week), unit = "this week" }
-    local lines = {}
-    for i = 1, math.min(3, #runs) do
-      local e = runs[i]
-      lines[#lines + 1] = "|cffe6e8ee" .. (e.run.dungeon or "?") .. "|r  " .. (e.live and "in progress" or UI.Time(ns.RunDuration(e)))
-    end
-    rr.body = #lines > 0 and table.concat(lines, "\n") or "No runs yet. Walk into a dungeon and Foxden logs it."
-    self.runs:Set(rr)
+  UI.Guard("Home (this week)", function()
+    -- this week: your recap (Modules/Facts.lua), with your runs
+    local w = {}
+    if ns.Facts then local _, wk2 = ns.Facts(); w = wk2 or {} end
+    local weekRuns, wk = 0, ns.FactsWeekKey and ns.FactsWeekKey()
+    for _, r in ipairs(ns.GetRuns and ns.GetRuns() or {}) do if wk and r.endTime and ns.FactsWeekKey(r.endTime) == wk then weekRuns = weekRuns + 1 end end
+    local kills, best, bestN = 0, nil, 0
+    for name, n in pairs(w.kills or {}) do kills = kills + n; if n > bestN then best, bestN = name, n end end
+    local bits = {}
+    if (w.levels or 0) > 0 then bits[#bits + 1] = w.levels .. (w.levels == 1 and " level" or " levels") end
+    if (w.quests or 0) > 0 then bits[#bits + 1] = w.quests .. (w.quests == 1 and " quest" or " quests") end
+    if kills > 0 then bits[#bits + 1] = (ns.Commas and ns.Commas(kills) or kills) .. " kills" end
+    bits[#bits + 1] = (w.deaths or 0) .. ((w.deaths or 0) == 1 and " death" or " deaths")
+    local body = table.concat(bits, "  ·  ")
+    if best then body = body .. "\nMost killed: |cffe6e8ee" .. best .. "|r ×" .. bestN end
+    self.runs:Set({ title = "This week", big = tostring(weekRuns), unit = weekRuns == 1 and "dungeon run" or "dungeon runs",
+      body = body, icon = "Interface\\Icons\\INV_Misc_PocketWatch_01" })
   end)
 end
 

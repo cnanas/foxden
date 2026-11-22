@@ -1,5 +1,11 @@
 # Foxden
 
+## 2.3.11
+
+- **Your stats** (Home → Your stats): this week or all time. Kills, deaths, quests, gold looted, levels and dungeon runs, plus fun facts: most killed, the enemy you died fighting most, your most dangerous zone, favourite ability, favourite zone, dungeon nemesis and fastest clear. Most of these start counting now; quests and levels come from the game's own records, so they go back to level 1.
+- **This week** tile on Home: your runs, levels, quests, kills and deaths, and what you killed most.
+- **Wowhead link in quest details:** click a quest in the quest tracker, and copy its Wowhead link from the panel.
+
 ## 2.3.10
 
 - **Light and dark themes:** Settings → **Theme**, or the **Light / Dark** button at the top of the Foxden window. Switches straight away.
