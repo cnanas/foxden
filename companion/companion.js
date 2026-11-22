@@ -516,6 +516,35 @@ async function writeSiteData(crafting) {
 }
 
 let busy = false;
+// A guildmate's parcel (handed over in game by Foxden's relay, because they don't run the companion):
+// their wishlist, "want to run" and map pins, craft asks and requests, boss tips and notes for
+// Discord. Each part goes through the same once-only checks as this character's own.
+async function handleParcel(from, p) {
+  if (!p || typeof p !== 'object') return true;
+  const who = String(p.char || from || '');
+  if (p.member && who && config.siteUrl && config.siteKey && !DRY) {
+    craftState.parcelMember = craftState.parcelMember || {};
+    const h = createHash('sha256').update(JSON.stringify(p.member)).digest('hex');
+    if (craftState.parcelMember[who] !== h) {
+      try {
+        const res = await fetch(`${config.siteUrl.replace(/\/$/, '')}/api/member`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.siteKey}` },
+          body: JSON.stringify({ members: { [who]: p.member } }),
+        });
+        if (!res.ok) { console.error(`Wishlist from ${who} wasn't saved (${res.status}).`); return false; }
+        craftState.parcelMember[who] = h; saveCraftState();
+        console.log(`Uploaded ${who.split('-')[0]}'s wishlist and "want to run" list.`);
+      } catch (err) { console.error(`Website unreachable for ${who}'s wishlist (${err.message}).`); return false; }
+    }
+  }
+  if (Array.isArray(p.asks)) await postBoardAsks(p.asks);
+  if (Array.isArray(p.requests)) await sendCraftRequests(p.requests);
+  if (Array.isArray(p.tips)) await uploadBossTips(p.tips);
+  // notes: text only (their screenshots are on their computer, not this one)
+  if (Array.isArray(p.notes)) await postNotes(p.notes.map(n => ({ ...n, shots: [] })));
+  return true;
+}
+
 async function check() {
   if (busy) return; busy = true;
   try {
@@ -543,6 +572,11 @@ async function check() {
       if (posted.has(id) || !entry || typeof entry.json !== 'string') continue;
       let run;
       try { run = JSON.parse(entry.json); } catch { console.error(`Relayed run ${key} is damaged; skipping it.`); posted.add(id); savePosted(); continue; }
+      if (run && run.parcel) {
+        const ok = await handleParcel(entry.from, run);
+        if (ok && !DRY) { posted.add(id); savePosted(); }
+        continue;
+      }
       if (!run || !run.id) continue;
       const ok = await send(run);
       if (!ok) break;

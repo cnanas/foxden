@@ -1,5 +1,9 @@
 # Foxden
 
+## 2.3.13
+
+- **Your wishlist, requests and tips reach the guild website without the companion app.** Like your runs, Foxden hands them to a guildmate who runs the companion the next time you're both online: your loot wishlist, "I want to run this", map pins from notes, craft asks and craft requests, boss tips written in game, and notes for Discord (text only). It only sends again when something changed. `/fox status` says when something is waiting.
+
 ## 2.3.12
 
 ### All in one

@@ -16,6 +16,12 @@
 --
 -- Courier side:  FoxdenDB.relay[sender .. "/" .. id] = { from, at, json }   (the companion reads these)
 -- Sender side:   run.relayedTo = courier, run.relayedAt = time
+--
+-- Parcels: besides runs, a guildmate without the companion hands over what it shares with the
+-- website, as one JSON "parcel" (id "P<hash>", same messages): their wishlist, "want to run" and
+-- map pins, craft asks and craft requests, boss tips written in game, and notes queued for
+-- Discord (text only). Sent again only when something in it changed (FoxdenDB.parcelSent = hash).
+-- The courier's companion uploads each part with the same once-only checks as its own.
 
 local _, ns = ...
 local CHUNK = 200
@@ -58,9 +64,49 @@ local function waiting()
 end
 ns.RelayWaiting = waiting
 
+-- ---- the parcel: what this character shares with the website ------------------------------
+local function hash(str)
+  local h = 5381
+  for i = 1, #str do h = (h * 33 + str:byte(i)) % 4294967296 end
+  return string.format("%08x", h)
+end
+local MAX_PARCEL = 30000
+local function parcel()
+  if not ns.ToJSON then return nil end
+  local key, short = me(), UnitName("player")
+  local p = { parcel = true, v = 1, char = key }
+  p.member = db.member and db.member[key] or nil
+  local function mineOnly(list, field)
+    local out = {}
+    for _, x in ipairs(type(list) == "table" and list or {}) do
+      if type(x) == "table" and (not field or x[field] == key or x[field] == short) then out[#out + 1] = x end
+    end
+    return #out > 0 and out or nil
+  end
+  p.asks = mineOnly(db.boardAsks, "char")
+  p.requests = mineOnly(db.craftRequests, "char")
+  p.tips = mineOnly(db.tipOutbox, "by")
+  local notes = {}
+  for _, n in ipairs(type(db.notes) == "table" and db.notes or {}) do
+    if type(n) == "table" and n.discord == "queued" and (n.char == key or not n.char) then
+      notes[#notes + 1] = { id = n.id, char = n.char or key, at = n.at, text = n.text, loc = n.loc, discord = "queued", discordAt = n.discordAt }
+    end
+  end
+  p.notes = #notes > 0 and notes or nil
+  if not (p.member or p.asks or p.requests or p.tips or p.notes) then return nil end
+  local ok, json = pcall(ns.ToJSON, p)
+  if not ok or type(json) ~= "string" or #json > MAX_PARCEL then return nil end
+  return json, hash(json)
+end
+local function parcelDue()
+  if ns.IsCourier() then return nil end -- our own companion uploads it
+  local json, h = parcel()
+  if json and h ~= db.parcelSent then return json, h end
+end
+
 local function ask(force)
   if not ready() or sending then return end
-  if #waiting() == 0 then return end
+  if #waiting() == 0 and not parcelDue() then return end
   if not force and GetTime() - lastAsk < ASK_EVERY then return end
   lastAsk = GetTime()
   ns.Send("C?", "GUILD")
@@ -77,20 +123,27 @@ end
 local function sendNext(to)
   if sending then return end
   local run = waiting()[1]
-  if not run then return end
-  local json = ns.RunForTransfer(run)
-  if #json > MAX_BYTES then run.relayedTo = "too large"; return sendNext(to) end
+  local json, id
+  if run then
+    json, id = ns.RunForTransfer(run), run.id
+    if #json > MAX_BYTES then run.relayedTo = "too large"; return sendNext(to) end
+    sending = { run = run, id = id, to = to, sentAt = nil }
+  else
+    local pj, h = parcelDue()
+    if not pj then return end
+    json, id = pj, "P" .. h
+    sending = { parcel = h, id = id, to = to, sentAt = nil }
+  end
   local parts = math.ceil(#json / CHUNK)
-  sending = { run = run, to = to, sentAt = nil }
-  ns.Send(table.concat({ "RS", run.id, parts, #json }, "\t"), "WHISPER", to)
+  ns.Send(table.concat({ "RS", id, parts, #json }, "\t"), "WHISPER", to)
   for i = 1, parts do
     local last = i == parts
-    ns.Send(table.concat({ "RD", run.id, i, json:sub((i - 1) * CHUNK + 1, i * CHUNK) }, "\t"), "WHISPER", to, false,
+    ns.Send(table.concat({ "RD", id, i, json:sub((i - 1) * CHUNK + 1, i * CHUNK) }, "\t"), "WHISPER", to, false,
       last and function()
         sending.sentAt = GetTime()
         -- no answer within a minute and a half: give up for now, ask again later
         C_Timer.After(90, function()
-          if sending and sending.run == run and GetTime() - (sending.sentAt or 0) >= 89 then sending = nil end
+          if sending and sending.id == id and GetTime() - (sending.sentAt or 0) >= 89 then sending = nil end
         end)
       end or nil)
   end
@@ -124,8 +177,8 @@ local function onMessage(prefix, text, channel, sender)
 
   elseif kind == "C" then
     if a and a:match("^https?://[%w%.%-:/]+$") then db.siteUrl = a end
-    -- first courier to answer gets our waiting runs
-    if not sending and #waiting() > 0 then sendNext(sender) end
+    -- first courier to answer gets our waiting runs, then our parcel
+    if not sending and (#waiting() > 0 or parcelDue()) then sendNext(sender) end
 
   elseif kind == "RS" and channel == "WHISPER" and ns.IsCourier() then
     local parts, bytes = tonumber(b), tonumber(c)
@@ -143,14 +196,24 @@ local function onMessage(prefix, text, channel, sender)
       local json = table.concat(inc.got, "", 1, inc.parts)
       if #json == inc.bytes and json:sub(1, 1) == "{" and store(sender, a, json) then
         ns.Send("RA\t" .. a, "WHISPER", sender)
-        ns.say(string.format("Passed along a run from %s; your companion will upload it.", (sender:gsub("%-.*", ""))))
+        if tostring(a):sub(1, 1) == "P" then
+          ns.say(string.format("Passed along %s's wishlist, requests and tips; your companion will upload them.", (sender:gsub("%-.*", ""))))
+        else
+          ns.say(string.format("Passed along a run from %s; your companion will upload it.", (sender:gsub("%-.*", ""))))
+        end
       end
     end
 
   elseif kind == "RA" and channel == "WHISPER" then
-    if sending and sending.to == sender and sending.run.id == a then
-      sending.run.relayedTo, sending.run.relayedAt = sender, GetServerTime()
-      ns.say(string.format("Run sent to %s for the website: %s.", (sender:gsub("%-.*", "")), sending.run.dungeon or "dungeon"))
+    if sending and sending.to == sender and sending.id == a then
+      if sending.run then
+        sending.run.relayedTo, sending.run.relayedAt = sender, GetServerTime()
+        ns.say(string.format("Run sent to %s for the website: %s.", (sender:gsub("%-.*", "")), sending.run.dungeon or "dungeon"))
+      else
+        -- the parcel: wishlist, requests, tips, notes are on their way to the website
+        db.parcelSent = sending.parcel
+        ns.say(string.format("Your wishlist, requests and tips went to %s for the guild website.", (sender:gsub("%-.*", ""))))
+      end
       sending = nil
       ns.Changed()
       C_Timer.After(2, function() sendNext(sender) end)
@@ -178,5 +241,8 @@ table.insert(ns.statusLines, function()
     return string.format("Your companion is set up: you pass guildmates' runs to the website (%d waiting for it).", n)
   end
   local w = #waiting()
-  return w > 0 and string.format("%d run%s waiting for a guildmate who runs the companion.", w, w == 1 and "" or "s") or nil
+  local lines = {}
+  if w > 0 then lines[#lines + 1] = string.format("%d run%s waiting for a guildmate who runs the companion.", w, w == 1 and "" or "s") end
+  if parcelDue() then lines[#lines + 1] = "Your wishlist, requests or tips are waiting for a guildmate who runs the companion." end
+  return #lines > 0 and table.concat(lines, " ") or nil
 end)
