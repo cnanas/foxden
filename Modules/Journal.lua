@@ -131,12 +131,30 @@ local CLIENT_MAPS = {
   ["stratholme"] = { "Stratholme", 2 },
   ["molten-core"] = { "MoltenCore", 1 },
   ["onyxia-s-lair"] = { "OnyxiasLair", 1 },
+  ["onyxias-lair"] = { "OnyxiasLair", 1 },
   ["blackwing-lair"] = { "BlackwingLair", 4 },
   ["zul-gurub"] = { "ZulGurub", 1 },
   ["ruins-of-ahn-qiraj"] = { "RuinsofAhnQiraj", 1 },
   ["ahn-qiraj-temple"] = { "AhnQiraj", 3 },
   ["naxxramas"] = { "Naxxramas", 6 },
 }
+-- Map pictures Foxden carries for the dungeons the game has none for (Media/Maps/<file><n>.tga,
+-- the whole 3:2 picture squeezed into 1024 x 512): { file, { floor names } }.
+-- "Atlas de Azeroth: Forever" by Santiago Reyes, https://sreyesmaps.com, used with the credit he
+-- asks for; his mark stays in each picture.
+local ART_CREDIT = "Map by Santiago Reyes (sreyesmaps.com)"
+local ART_MAPS = {
+  ["hall-of-thanes"] = { "HallOfThanes", { "The Hall of Thanes" } },
+  ["ruins-of-lordaeron"] = { "RuinsOfLordaeron", { "Ruins of Lordaeron" } },
+  ["excavation-site-wetlands"] = { "ExcavationSite", { "Excavation Site" } },
+  ["city-of-dalaran"] = { "Dalaran", { "The Underbelly", "City of Dalaran" } },
+  ["drowned-city"] = { "DrownedCity", { "The Drowned City", "Atal'Byzal" } },
+  ["kroldok-stronghold"] = { "Kroldok", { "Krol'dok Stronghold" } },
+  ["alcaz-prison"] = { "AlcazPrison", { "Main Unit", "Maximum Security Unit" } },
+  ["blackmaw-hold"] = { "BlackmawHold", { "Blackmaw Grove", "Festering Grotto", "Depths of the Fallen Grove", "Depths of the Elders", "Depths of the Burrow", "Depths of Forbidden Magic" } },
+  ["shapers-terrace"] = { "ShapersTerrace", { "Shaper's Terrace", "Prismatic Talus" } },
+}
+ART_MAPS["krol-dok-stronghold"], ART_MAPS["shaper-s-terrace"] = ART_MAPS["kroldok-stronghold"], ART_MAPS["shapers-terrace"]
 -- names the game's map list may use instead of ours
 local ALIASES = {
   ["deadmines"] = { "the-deadmines" }, ["stormwind-stockade"] = { "the-stockade", "stockade" },
@@ -204,6 +222,12 @@ local function clientFloors(key)
       end
     end
     if #list > 0 then return list end
+    -- Open-air instances (Zul'Farrak, Zul'Gurub, Ruins of Ahn'Qiraj) are drawn like a zone:
+    -- "<Folder>1".."<Folder>12" with no floor number.
+    local zone = "Interface\\WorldMap\\" .. folder .. "\\" .. folder
+    if c[2] == 1 and fileExists(zone .. "1") then
+      return { { key = zone, fid = folder, tiles = zone, n = 1 } }
+    end
   end
   return {}
 end
@@ -234,6 +258,17 @@ function ns.DungeonFloors(name)
       if api then f.map = api.map; if not (CLIENT_MAPS[key][3]) and api.name and #best > 1 then f.name = api.name end end
     end
     if #best == 0 and firstFound then best = firstFound; for _, f in ipairs(best) do f.key = f.map end end
+  end
+  -- 3. nothing in the game (Forever's own dungeons): the map pictures Foxden ships, by Santiago Reyes
+  if #best == 0 or (not fromApi and best == firstFound) then
+    local art = ART_MAPS[key]
+    if art then
+      best = {}
+      for i, fl in ipairs(art[2]) do
+        local file = "Interface\\AddOns\\Foxden\\Media\\Maps\\" .. art[1] .. i
+        best[#best + 1] = { key = file, fid = "art" .. i, image = file, name = #art[2] > 1 and fl or nil, n = i, credit = ART_CREDIT }
+      end
+    end
   end
   for _, f in ipairs(best) do f.fid = f.fid or (f.map and ("m" .. f.map)) end
   floorCache[key] = best
@@ -436,3 +471,22 @@ ns.RegisterModule({
     end,
   },
 })
+
+-- Foxden's own record of a boss (Data/BossData.lua): { npc, look, loot = { { id, name }, ... }, pin }.
+function ns.BossData_(dungeon, boss)
+  local d = ns.BossData and dungeon and ns.BossData[dungeon]
+  return d and d[boss] or nil
+end
+
+-- Where a boss stands, from Foxden's own record: our floor id, x, y (0..1000). The record names
+-- the picture it was measured on; it counts when that picture is the floor being shown.
+function ns.SeedBossPin(dungeon, boss)
+  local rec = ns.BossData_(dungeon, boss)
+  local pin = rec and rec.pin
+  if not pin then return nil end
+  for _, f in ipairs(ns.DungeonFloors and ns.DungeonFloors(dungeon) or {}) do
+    if (pin.tiles and f.tiles and f.tiles:lower() == pin.tiles) or (pin.image and f.image == pin.image) then
+      return f.fid, pin.x, pin.y
+    end
+  end
+end

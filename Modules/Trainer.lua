@@ -35,6 +35,13 @@ local function spellID(i)
   return ok2 and type(id) == "number" and not ns.IsSecret(id) and id or nil
 end
 
+-- GetTrainerServiceInfo: classic returns (name, rank, type); WoW Forever returns (name, type, ...)
+local TYPES = { available = true, unavailable = true, used = true, header = true }
+local function shape(rank, kind)
+  if TYPES[rank] and not TYPES[kind] then return nil, rank end
+  return rank, kind
+end
+
 local function call(fn, ...) if not fn then return nil end local ok, a, b, c, d = pcall(fn, ...); if ok then return a, b, c, d end end
 
 -- Read every service with all filters on, then put the player's filters back.
@@ -42,11 +49,12 @@ local function read()
   local saved = {}
   for _, f in ipairs(FILTERS) do
     saved[f] = call(GetTrainerServiceTypeFilter, f)
-    call(SetTrainerServiceTypeFilter, f, 1)
+    call(SetTrainerServiceTypeFilter, f, true)
   end
   local list, used = {}, {}
   for i = 1, (call(GetNumTrainerServices) or 0) do
     local name, rank, kind = call(GetTrainerServiceInfo, i)
+    rank, kind = shape(rank, kind)
     if name and kind ~= "header" and not ns.IsSecret(name) then
       local s = {
         id = spellID(i), name = name, rank = (rank ~= "" and rank) or nil,
@@ -59,7 +67,7 @@ local function read()
       if kind == "used" then used[key(s)] = true end
     end
   end
-  for _, f in ipairs(FILTERS) do if saved[f] ~= nil then call(SetTrainerServiceTypeFilter, f, saved[f] and 1 or 0) end end
+  for _, f in ipairs(FILTERS) do if saved[f] ~= nil then call(SetTrainerServiceTypeFilter, f, saved[f] == true or saved[f] == 1) end end
   return list, used
 end
 
@@ -69,8 +77,22 @@ local function capture()
   if #list == 0 then return end
   local t = T()
   if call(IsTradeskillTrainer) then
-    local prof = list[1].skill or "Profession"
+    -- the profession: what most of its recipes need (the first row can be a rank, like
+    -- "Apprentice Blacksmith", which needs no skill)
+    local count, prof, best = {}, nil, 0
+    for _, sp in ipairs(list) do
+      if sp.skill then count[sp.skill] = (count[sp.skill] or 0) + 1; if count[sp.skill] > best then prof, best = sp.skill, count[sp.skill] end end
+    end
+    if not prof then return end
+    -- keep what an earlier visit read: trainers can stop listing recipes once you know them
+    local old = t.prof[prof]
+    if old and old.spells then
+      local have = {}
+      for _, sp in ipairs(list) do have[key(sp)] = true end
+      for _, sp in ipairs(old.spells) do if not have[key(sp)] then list[#list + 1] = sp end end
+    end
     t.prof[prof] = { at = GetServerTime(), spells = list }
+    t.prof.Profession = nil -- from an older Foxden that couldn't tell the profession
   else
     local _, class = UnitClass("player")
     t.class[class] = { at = GetServerTime(), spells = list }
@@ -141,6 +163,7 @@ local function learnable()
   local list, total = {}, 0
   for i = 1, (call(GetNumTrainerServices) or 0) do
     local name, rank, kind = call(GetTrainerServiceInfo, i)
+    rank, kind = shape(rank, kind)
     if kind == "available" then
       local s = { id = spellID(i), name = name, rank = (rank ~= "" and rank) or nil }
       if not ignore[key(s)] then

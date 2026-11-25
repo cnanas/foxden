@@ -37,3 +37,20 @@ Questie team permits (see their LICENSE.md). Foxden itself is GPL-3.0-or-later.
 
 `Data/Rares.lua` (rares and rare elites with their levels and spawn points) comes from QuestieDB
 under the same terms.
+
+## Dungeon Journal (ForeverDungeonJournal) by Exehn
+
+`Data/BossData.lua` was seeded on 2026-11-23 from facts listed in the Dungeon Journal addon:
+boss NPC IDs, display IDs, the item IDs and names of boss loot, and boss positions on the
+dungeon maps. No code, text, or artwork was taken. The addon carries no license; permission
+from its author has not been asked.
+
+## Atlas de Azeroth: Forever, by Santiago Reyes
+
+`Media/Maps/*.tga` (the maps of WoW Forever's new dungeons) are illustrations by Santiago Reyes,
+https://sreyesmaps.com, downloaded from his site and scaled down, otherwise unchanged; his mark
+stays in each picture. They are his reinterpretations, not official World of Warcraft art. Used
+under the terms he states for addons ("Proyecto Atlas de Azeroth: Forever",
+https://sreyesmaps.com/post/proyecto-atlas-de-azeroth-forever): free to use, with credit, without
+altering the watermarks or credits, and never for profit.
+

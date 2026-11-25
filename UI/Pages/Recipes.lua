@@ -59,6 +59,28 @@ local function makers()
   return map
 end
 
+-- Recipes taught by an item (plans, patterns, formulas from drops, quests or vendors) instead of
+-- a trainer: cost row [12] is that item's ID (0 or missing = a trainer teaches it).
+-- ns.KnownRecipes(): this character's known recipes, by crafted item ID and by name.
+function ns.KnownRecipes()
+  local c = ns.Crafting and ns.Crafting()
+  local me = c and c.chars and c.chars[ns.CharKey()]
+  local set = {}
+  for _, d in pairs(me and me.professions or {}) do
+    for _, r in ipairs(d.recipes or {}) do
+      if r.item and r.item > 0 then set[r.item] = true end
+      if r.name then set[r.name] = true end
+    end
+  end
+  return set
+end
+-- a recipe this character can use for skill-ups: a trainer teaches it, or they already learned it
+function ns.RecipeReachable(c, known)
+  if (c[12] or 0) == 0 then return true end
+  known = known or ns.KnownRecipes()
+  return (c[2] > 0 and known[c[2]]) or known[c[3]] or false
+end
+
 -- profession skill needed to learn a recipe, by name: the website's list, then trainers you visited
 local function skillMap()
   local map = {}
@@ -127,7 +149,8 @@ function page:Build(f)
     r.name:SetText(c[3] .. (c[6] > 1 and ("  |cff999fb0x" .. c[6] .. "|r") or ""))
     r.skill:ClearAllPoints(); r.skill:SetPoint("LEFT", w * 0.40, 0)
     local learn, grey = self.skills[c[3]], c[11] or 0
-    r.skill:SetText((learn and ("|cffe6e8ee" .. learn .. "|r  ") or "") .. (grey > 0 and ((c[10] or 0) .. "/" .. grey) or ""))
+    r.skill:SetText((learn and ("|cffe6e8ee" .. learn .. "|r  ") or "") .. (grey > 0 and ((c[10] or 0) .. "/" .. grey) or "")
+      .. (((c[12] or 0) > 0) and "  |cff8b96aeplans|r" or ""))
     local d = difficulty(c, self.mine)
     if d then r.skill:SetTextColor(unpack(DIFF[d])) else r.skill:SetTextColor(unpack(C.dim)) end
     local m = self.makers[c[2] > 0 and c[2] or c[3]]
@@ -266,6 +289,7 @@ function page:Refresh(arg)
 
   local items, picked = {}, nil
   local makersOf = self.makers
+  local known = ns.KnownRecipes()
   for _, c in ipairs(site.costs or {}) do
     local inScope = (query ~= "" and c[3]:lower():find(query, 1, true)) or (query == "" and c[4] == prof and (next(categories) == nil or categories[c[5] ~= "" and c[5] or "Other"]))
     if inScope then
@@ -273,7 +297,7 @@ function page:Refresh(arg)
       local keep = show == "all"
         or (show == "guild" and m ~= nil and (m.takers ~= nil or #m.known > 0))
         or (show == "requests" and m ~= nil and m.takers ~= nil)
-        or (show == "skillups" and difficulty(c, self.mine) ~= "grey" and (c[11] or 0) > 0)
+        or (show == "skillups" and difficulty(c, self.mine) ~= "grey" and (c[11] or 0) > 0 and ns.RecipeReachable(c, known))
       if keep then items[#items + 1] = c end
     end
     if c[1] == selected then picked = c end
@@ -315,6 +339,10 @@ function page:ShowDetail(site, c)
   local bits = { c[4] }
   local skill = self.skills[c[3]]
   if skill then bits[#bits + 1] = "learned at skill " .. skill end
+  if (c[12] or 0) > 0 then
+    local plans = UI.ItemLook(c[12])
+    bits[#bits + 1] = "learned from " .. (plans or "plans (a drop, quest or vendor)") .. ", not a trainer"
+  end
   if (c[11] or 0) > 0 then bits[#bits + 1] = "turns yellow at " .. (c[10] or 0) .. ", grey at " .. c[11] end
   if c[5] ~= "" then table.insert(bits, 2, c[5]) end
   if c[6] > 1 then bits[#bits + 1] = "makes " .. c[6] end

@@ -1,9 +1,25 @@
 # Foxden
 
-## 2.3.13.20261125
+## 2.4.0
 
-- Weekly data update: auction prices, recipes, loot and quest data as of Nov 25, 2026.
+### Proc flashes
+- **Glowing art beside your character while a proc is ready**, like the modern game's spell alerts, with a design for each ability. Warrior: Revenge, Overpower, Victory Rush, Execute. Rogue: Riposte. Hunter: Mongoose Bite, Counterattack. Paladin: Hammer of Wrath. Mage, warlock, priest, druid and shaman: Clearcasting and spells that turn instant (new, so tell us if one doesn't light up).
+- The flash blinks gently in its last two seconds. Settings → **Proc flashes** has a switch for each one, a size setting and an optional sound. `/fox procs test` shows yours.
+- **Battle Shout reminder (warriors):** an icon under your character while the buff is missing, in a fight or inside a dungeon.
 
+### Potion button
+- **A button you can drag anywhere** that opens every potion, elixir and flask in your bags; click one to use it. Works in combat, shows the cooldown, and can have a key (Settings → Keys, or Key Bindings → AddOns → Foxden). `/fox potions` puts it back in the middle.
+
+### For streamers
+- **Stream overlays** (off by default; Settings → Stream, or `/fox stream`): live splits against your best run, a boss strip, boss pull and kill cards, loot cards, and the dungeon map with your route boss by boss. `/fox stream test` previews them.
+
+### Dungeon journal
+- **Maps for WoW Forever's new dungeons**, drawn by Santiago Reyes (sreyesmaps.com), with bosses marked.
+- Zul'Farrak and other open-air dungeons can show the game's own map.
+
+### Profession planner and quests
+- **The leveling planner follows your current skill** and warns at the skill cap. It only counts on recipes a trainer sells until you know the others, says how to learn each recipe, shows each recipe's materials, and the shopping list shows what you really have.
+- **Quest chains follow every prerequisite**, so a dungeon quest's card shows the whole chain leading to it.
 
 ## 2.3.13
 

@@ -226,18 +226,40 @@ local function chainNext()
   return nextOf
 end
 -- The whole chain around a quest, from QuestieDB: { {id, title, giver, map, x, y, min, faction, level}, ... }
+-- Backwards it follows every quest this one needs: all of "needs all of" (so two branches that
+-- meet both show), and one of "needs one of" (the one you did, else one for your faction).
+-- Earlier quests always come before the ones that need them.
+local function forMyFaction(r)
+  local f = r and r[4]
+  if not f or f == "" or f == "B" then return true end
+  local mine = UnitFactionGroup and UnitFactionGroup("player")
+  return (f == "A") == (mine == "Alliance")
+end
 function Q.ChainFromDB(id)
   local db = ns.QuestDB or {}
   if not db[id] then return nil end
   local nxt, seen, back, fwd = chainNext(), { [id] = true }, {}, {}
-  local cur = id
-  while #back < 30 do
-    local r = db[cur]
-    local pre = r and ((r[8] and r[8][1]) or (r[7] and r[7][1]))
-    if not pre or seen[pre] or not db[pre] then break end
-    seen[pre] = true; table.insert(back, 1, pre); cur = pre
+  local function pickOne(list)
+    local fallback
+    for _, p in ipairs(list or {}) do
+      if db[p] then
+        if ns.QuestState and ns.QuestState(p) == "done" then return p end
+        if not fallback and forMyFaction(db[p]) then fallback = p end
+      end
+    end
+    return fallback
   end
-  cur = id
+  local function visit(q, depth)
+    if depth > 30 or #back >= 30 then return end
+    local r, needs = db[q], {}
+    for _, p in ipairs(r[7] or {}) do needs[#needs + 1] = p end
+    local one = pickOne(r[8]); if one then needs[#needs + 1] = one end
+    for _, p in ipairs(needs) do
+      if db[p] and not seen[p] then seen[p] = true; visit(p, depth + 1); back[#back + 1] = p end
+    end
+  end
+  visit(id, 0)
+  local cur = id
   while #fwd < 30 do
     local n = nxt[cur]
     if not n or seen[n] then break end
@@ -250,6 +272,23 @@ function Q.ChainFromDB(id)
   step(id)
   for _, q in ipairs(fwd) do step(q) end
   return out
+end
+
+-- The website's chains can carry placeholder names ("Quest 94887") for quests it has no title
+-- for: use QuestieDB's title, or the game's.
+function Q.FixChainTitles(chain)
+  if type(chain) ~= "table" then return chain end
+  for _, st in ipairs(chain) do
+    if type(st) == "table" and type(st[2]) == "string" and st[2]:match("^Quest %d+$") then
+      local r = ns.QuestDB and ns.QuestDB[st[1]]
+      local t = r and r[1]
+      if (not t or t == "") and C_QuestLog and C_QuestLog.GetTitleForQuestID then
+        local ok, g = pcall(C_QuestLog.GetTitleForQuestID, st[1]); if ok then t = g end
+      end
+      if t and t ~= "" then st[2] = t end
+    end
+  end
+  return chain
 end
 
 local zoneNames = {}
@@ -320,7 +359,9 @@ function Q.Enrich(q)
     if (x[11] or "") == "" and r[19] ~= x[6] then x[11] = r[19] end
   end
   if (x[12] or "") == "" and (r[23] or "") ~= "" then x[12] = r[23] end
-  if type(x[23]) ~= "table" or #x[23] < 2 then x[23] = Q.ChainFromDB(q[1]) or x[23] end
+  -- QuestieDB's chain when it has one (it knows what each quest needs); the website's chain is
+  -- partly learned from play order (quests taken one after another at the same NPC)
+  x[23] = Q.ChainFromDB(q[1]) or Q.FixChainTitles(x[23])
   return x
 end
 

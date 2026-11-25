@@ -75,16 +75,19 @@ local function draw()
   local floor = state.floors[state.floor]
 
   local pins, unplaced = {}, 0
+  local pinPx = math.floor(40 * (ns.settings and ns.settings.bossPinScale or 0.8) + 0.5)
   for i, b in ipairs(state.bosses) do
     if not b.wing then
-      local f, x, y = ns.BossPin and ns.BossPin(state.dungeon, b.name)
+      local f, x, y -- (`a and f()` keeps only f's first result)
+      if ns.BossPin then f, x, y = ns.BossPin(state.dungeon, b.name) end
       if f and ns.PinOnFloor(f, floor, state.floor) then
-        pins[#pins + 1] = { x = x, y = y, n = i, key = b.name, label = b.name, sub = b.level and ("Level " .. b.level) or nil }
+        pins[#pins + 1] = { x = x, y = y, n = i, key = b.name, label = b.name, sub = b.level and ("Level " .. b.level) or nil,
+          boss = true, look = ns.BossLook and ns.BossLook(state.dungeon, b.name), size = pinPx }
       elseif not f then unplaced = unplaced + 1 end
     end
   end
   canvas:ClearAllPoints(); canvas:SetPoint("TOP", overlay, "TOP", 0, -top)
-  canvas:Draw(floor.map, mw, mh, pins, floor.tiles)
+  canvas:Draw(floor.map, mw, mh, pins, floor.tiles, floor)
 
   for i, f in ipairs(state.floors) do
     local b = floorButtons[i]
@@ -101,7 +104,7 @@ local function draw()
     b:SetShown(#state.floors > 1)
   end
   for i = #state.floors + 1, #floorButtons do floorButtons[i]:Hide() end
-  note:SetText(state.dungeon .. "  ·  numbers are the boss order"
+  note:SetText(state.dungeon
     .. (unplaced > 0 and ("  ·  " .. unplaced .. " not placed yet (Foxden > Dungeons > Map)") or "")
     .. "  ·  right-click or Game map for the game's map")
 end

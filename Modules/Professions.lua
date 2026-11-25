@@ -95,6 +95,40 @@ local function scan()
   ns.Changed()
 end
 
+-- Your current skill and cap in a profession, by name, straight from the game (no window
+-- needed): skill, max, or nil. Modern clients: GetProfessions; older ones: the skill lines.
+function ns.LiveSkill(profession)
+  if GetProfessions and GetProfessionInfo then
+    for _, idx in ipairs({ GetProfessions() }) do
+      if type(idx) == "number" then
+        local ok, name, _, skill, max = pcall(GetProfessionInfo, idx)
+        if ok and name == profession then return tonumber(skill), tonumber(max) end
+      end
+    end
+  end
+  if GetNumSkillLines and GetSkillLineInfo then
+    for i = 1, tonumber(GetNumSkillLines()) or 0 do
+      local name, header, _, rank, _, _, max = GetSkillLineInfo(i)
+      if name == profession and not header then return tonumber(rank), tonumber(max) end
+    end
+  end
+end
+
+-- keep the saved skill and cap current between profession-window scans (a skill-up, a new rank)
+local function syncSkills()
+  local me = ns.MyCrafting and ns.MyCrafting()
+  if not me or not me.professions then return end
+  local changed = false
+  for name, p in pairs(me.professions) do
+    local skill, max = ns.LiveSkill(name)
+    if skill and (skill ~= p.skill or (max and max ~= p.maxSkill)) then
+      p.skill, p.maxSkill = skill, max or p.maxSkill
+      changed = true
+    end
+  end
+  if changed then ns.Changed() end
+end
+
 -- the list fills in over several events; scan once it settles
 local function soon()
   if pending then return end
@@ -107,7 +141,9 @@ ns.RegisterModule({
   events = {
     TRADE_SKILL_SHOW = function() soon() end,
     TRADE_SKILL_LIST_UPDATE = function() soon() end,
-    SKILL_LINES_CHANGED = function() soon() end,
+    SKILL_LINES_CHANGED = function() soon(); syncSkills() end,
+    CHAT_MSG_SKILL = function() syncSkills() end,
+    PLAYER_ENTERING_WORLD = function() syncSkills() end,
   },
 })
 

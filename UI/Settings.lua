@@ -162,11 +162,69 @@ local rLz = add(UI.Toggle(panel, CONTENT_W, "Guildmates' zones on the world map"
   "Everyone online, even without Foxden: a badge on each zone with how many are there (names on hover). The game only says the zone.",
   get("guildZones"), function(v) ns.settings.guildZones = v; if ns.RefreshMapPins then ns.RefreshMapPins() end end), rL)
 
-local sK = section("Keys", rLz)
+local rP = add(UI.Toggle(panel, CONTENT_W, "Potion button",
+  "A button you can drag anywhere: click it to open every potion, elixir and flask in your bags, then click one to use it. Works in combat. /fox potions puts it back in the middle.",
+  get("potionButton"), function(v) ns.settings.potionButton = v; if ns.RefreshPotions then ns.RefreshPotions() end end), rLz)
+
+local rPr = add(UI.Toggle(panel, CONTENT_W, "Proc flashes",
+  "Glowing art beside your character while a proc is ready to use, one design per ability, for every class. Turn this off to hide them all, or pick which ones below. /fox procs test shows yours.",
+  get("procs"), function(v) ns.settings.procs = v; if ns.RefreshProcs then ns.RefreshProcs() end end), rP)
+-- one switch per flash for this character's class
+local rPlast = rPr
+for _, p in ipairs(ns.ProcList and ns.ProcList() or {}) do
+  rPlast = add(UI.Toggle(panel, CONTENT_W, "    " .. p.name, "Show the flash for this one.",
+    function() return not (ns.settings.procOff and ns.settings.procOff[p.id]) end,
+    function(v)
+      ns.settings.procOff = ns.settings.procOff or {}
+      ns.settings.procOff[p.id] = (not v) or nil
+    end), rPlast)
+end
+local rPs = add(UI.Stepper(panel, CONTENT_W, "Proc flash size", "How big the arcs are.",
+  { { 0.7, "70%" }, { 0.85, "85%" }, { 1, "100%" }, { 1.15, "115%" }, { 1.3, "130%" }, { 1.5, "150%" } }, get("procScale"), function(v) ns.settings.procScale = v; if ns.RefreshProcs then ns.RefreshProcs() end end), rPlast)
+local rPsnd = add(UI.Toggle(panel, CONTENT_W, "Proc sound", "A short ping each time a proc lights up.",
+  get("procSound"), function(v) ns.settings.procSound = v end), rPs)
+
+local rPb = add(UI.Toggle(panel, CONTENT_W, "Battle Shout reminder (warriors)",
+  "A pulsing Battle Shout icon under your character while the buff is missing, in a fight or anywhere inside a dungeon or raid. Another warrior's shout counts.",
+  get("shoutReminder"), function(v) ns.settings.shoutReminder = v; if ns.RefreshProcs then ns.RefreshProcs() end end), rPsnd)
+
+local sK = section("Keys", rPb)
 local rK = add(UI.KeyBind(panel, CONTENT_W, "Fishing key",
   "Press it to cast Fishing. Also in the game's Key Bindings under AddOns > Foxden.", ns.FISH_BINDING), sK, true)
 
-local s2 = section("History and window", rK)
+local rKp = add(UI.KeyBind(panel, CONTENT_W, "Potion key",
+  "Opens and closes the potion tray, in combat too. Also in the game's Key Bindings under AddOns > Foxden.", ns.POTION_BINDING), rK)
+
+local sS = section("Stream", rKp)
+local function streamSet(key) return function(v) ns.settings[key] = v; if ns.RefreshStream then ns.RefreshStream() end end end
+local rS1 = add(UI.Toggle(panel, CONTENT_W, "Stream overlays",
+  "Windows for your stream while you run a dungeon: capture them in OBS or just leave them in view. Drag each one where you want it. /fox stream test shows them all with sample data.",
+  get("stream"), streamSet("stream")), sS, true)
+local rS2 = add(UI.Toggle(panel, CONTENT_W, "Splits",
+  "The run clock and every boss as a split, green or red against the guild's best run.", get("streamSplits"), streamSet("streamSplits")), rS1)
+local rS3 = add(UI.Toggle(panel, CONTENT_W, "Boss strip",
+  "A thin bar of boss portraits that light up as they die.", get("streamStrip"), streamSet("streamStrip")), rS2)
+local rS4 = add(UI.Toggle(panel, CONTENT_W, "Boss cards",
+  "A card when a boss is pulled and another when it dies: kill time, split and top damage.", get("streamBoss"), streamSet("streamBoss")), rS3)
+local rS5 = add(UI.Toggle(panel, CONTENT_W, "Loot cards",
+  "A card for each green or better item someone in the group gets, and a gold one for your wishlist.", get("streamLoot"), streamSet("streamLoot")), rS4)
+local rS6 = add(UI.Toggle(panel, CONTENT_W, "Dungeon map",
+  "The dungeon's map with its bosses, the route so far, and a marker on the boss you're at. The game doesn't say where you stand inside a dungeon, so it moves boss by boss.",
+  get("streamMap"), streamSet("streamMap")), rS5)
+local rS7 = add(UI.Stepper(panel, CONTENT_W, "Overlay size", "Size of every stream window.",
+  { { 0.8, "80%" }, { 0.9, "90%" }, { 1, "100%" }, { 1.15, "115%" }, { 1.3, "130%" }, { 1.5, "150%" } },
+  get("streamScale"), streamSet("streamScale")), rS6)
+local rS8 = add(UI.Stepper(panel, CONTENT_W, "Behind the cards",
+  "Boss and loot cards come and go. Green or Black fills their area so OBS can key it out and only the cards show on stream.",
+  { { "none", "Nothing" }, { "green", "Green" }, { "black", "Black" } },
+  function() return ns.settings.streamBackdrop or "none" end, streamSet("streamBackdrop")), rS7)
+
+local rS9 = add(UI.Stepper(panel, CONTENT_W, "Dock",
+  "Keeps every stream window in one block in a corner, each in a slot that never moves, so you crop it once in OBS. /fox stream crops prints the numbers. Off lets you drag them anywhere.",
+  { { "TOPLEFT", "Top left" }, { "TOPRIGHT", "Top right" }, { "BOTTOMLEFT", "Bottom left" }, { "BOTTOMRIGHT", "Bottom right" }, { "off", "Off" } },
+  function() return ns.settings.streamDock or "off" end, streamSet("streamDock")), rS8)
+
+local s2 = section("History and window", rS9)
 local r4 = add(UI.Stepper(panel, CONTENT_W, "Keep runs",
   "Older runs are removed from the game's log. Discord keeps everything.",
   { { 25, "Last 25" }, { 50, "Last 50" }, { 100, "Last 100" }, { 250, "Last 250" }, { 0, "All" } },

@@ -143,6 +143,7 @@ local function addGot(run, itemID, link, count, who, boss, from)
   local g = { i = itemID, q = qualityOf(link, itemID), n = count, w = who, b = boss or bossFor(run, itemID), [from] = true }
   run.got[#run.got + 1] = g
   toBossLoot(run, itemID, g.b, g.q)
+  if ns.OnLootGot then pcall(ns.OnLootGot, run, g, link) end -- the stream overlay's loot cards
   ns.Changed()
 end
 

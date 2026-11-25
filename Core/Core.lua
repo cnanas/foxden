@@ -12,7 +12,8 @@ ns.SCHEMA = 3
 
 ns.DEFAULTS = { track = true, chat = true, remind = true, sendNow = true, keep = 100, scale = 1, share = true, offer = false, shareLocation = true, welcomed = false, copyPopup = true, runSummary = true, levelCard = true, shareLevelUps = true, guildDings = true, learnAll = true, levelScreenshot = false, tracker = true, minimapButton = true, rareAlerts = true, questPins = true, questPinsAll = true, questMinimap = true, questTracker = true, hideGameTracker = true,
   questAhead = 3, questShowGrey = false, questMarkSize = 18, questTrackerFont = 12, questTrackerWidth = 270, questTrackerBg = 0.45,
-  questTrackerLocked = false, questShowDoneObj = true, questTrackerItems = true, itemSource = true, auctionPrices = true, dungeonWorldMap = true, guildZones = true, look = "art", theme = "dark", entrancePins = true }
+  questTrackerLocked = false, questShowDoneObj = true, questTrackerItems = true, itemSource = true, auctionPrices = true, dungeonWorldMap = true, guildZones = true, look = "art", theme = "dark", entrancePins = true, bossPinScale = 0.8, hideDoneQuests = false, hideMapQuests = false, potionButton = true, procs = true, procScale = 1, procSound = false, shoutReminder = true,
+  stream = false, streamSplits = true, streamStrip = true, streamBoss = true, streamLoot = true, streamMap = true, streamScale = 1, streamBackdrop = "none", streamDock = "TOPLEFT" }
 ns.settings = setmetatable({}, { __index = ns.DEFAULTS }) -- replaced at load
 
 local db, run
@@ -556,6 +557,20 @@ SlashCmdList.FOXDEN = function(msg)
     ns.settings.tracker = ns.settings.tracker == false
     say("Dungeon tracker " .. (ns.settings.tracker and "on." or "off."), true)
     if ns.RefreshTracker then ns.RefreshTracker() end
+  elseif msg == "stream" then
+    if ns.ToggleStream then ns.ToggleStream() end
+  elseif msg == "stream test" or msg == "stream preview" then
+    if ns.StreamTest then ns.StreamTest() end
+  elseif msg == "stream crops" or msg == "stream crop" then
+    if ns.StreamCrops then ns.StreamCrops() end
+  elseif msg == "stream reset" then
+    if ns.ResetStreamPositions then ns.ResetStreamPositions(); say("Stream windows are back where they started.", true) end
+  elseif msg == "procs debug" then
+    if ns.ProcsDebug then ns.ProcsDebug() end
+  elseif msg == "procs test" or msg == "procs" or msg == "proc" then
+    if ns.ProcsTest then ns.ProcsTest() end
+  elseif msg == "potions" or msg == "potion" then
+    if ns.ResetPotions then ns.ResetPotions() end
   elseif msg == "trainer" then
     if ns.OpenPage then ns.OpenPage("trainer") end
   elseif msg == "copy" then
@@ -575,6 +590,6 @@ SlashCmdList.FOXDEN = function(msg)
       if ok and text then say(text, true) end
     end
   else
-    say("/fox (dashboard) · /fox options · /fox price <item> · /fox errors · /fox selftest · /fox status · /fox end · /fox send · /fox summary · /fox copy · /fox note · /fox trainer · /fox levelup · /fox maptest · /fox journaltest · /fox welcome", true)
+    say("/fox (dashboard) · /fox options · /fox price <item> · /fox errors · /fox selftest · /fox status · /fox end · /fox send · /fox summary · /fox copy · /fox note · /fox trainer · /fox potions · /fox procs test · /fox stream · /fox stream test · /fox levelup · /fox maptest · /fox journaltest · /fox welcome", true)
   end
 end

@@ -168,6 +168,9 @@ local function bestRun(dungeon)
   return times, total, by
 end
 
+-- the stream overlays (UI/Stream.lua) show the same bosses, portraits and best times
+ns.RunBossList, ns.SetBossPortrait, ns.BestRun, ns.WishesHere = bossesFor, setPortrait, bestRun, wishesHere
+
 local function signed(seconds)
   local s = math.floor(math.abs(seconds) + 0.5)
   return (seconds < 0 and "-" or "+") .. UI.Time(s)
@@ -278,9 +281,15 @@ local function icon(i)
   return b
 end
 
+-- while the stream overlays are on, their splits or boss strip show the same thing
+local function streaming()
+  local s = ns.settings
+  return s and s.stream and (s.streamSplits ~= false or s.streamStrip ~= false)
+end
+
 local function refresh()
   local run = ns.GetCurrentRun()
-  local want = run and not run._notDungeon and ns.settings.tracker ~= false and hiddenFor ~= run.id
+  local want = run and not run._notDungeon and ns.settings.tracker ~= false and hiddenFor ~= run.id and not streaming()
   if not want then if frame then frame:Hide() end return end
   if not frame then build() end
   if not frame:IsShown() then
@@ -375,7 +384,7 @@ end
 -- and it isn't (it came up during a loading screen, or a first draw failed), draw it.
 C_Timer.NewTicker(1, function()
   local run = ns.GetCurrentRun and ns.GetCurrentRun()
-  if not run or run._notDungeon or not ns.settings or ns.settings.tracker == false or hiddenFor == run.id then return end
+  if not run or run._notDungeon or not ns.settings or ns.settings.tracker == false or hiddenFor == run.id or streaming() then return end
   if fails < 5 and (not frame or not frame:IsShown()) then safeRefresh() end
 end)
 

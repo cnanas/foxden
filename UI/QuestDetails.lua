@@ -352,18 +352,18 @@ function ns.ShowQuestDetails(q, anchorTo)
     add(who .. (zone and (", " .. zone) or "") .. (tx and string.format("  |cff99a1b0(%d, %d)|r", math.floor(tx + 0.5), math.floor(ty + 0.5)) or ""), 12)
   end
 
-  -- its chain: the website's for dungeon quests, else built from the quest database.
+  -- its chain: from the quest database (QuestieDB) when it knows one, else the website's.
   -- Every step can be clicked (opens it here) and hovered (its rewards and XP).
   local site = ns.Site and ns.Site()
-  local chain, ends
+  local chain, ends = ns.Quests and ns.Quests.ChainFromDB and ns.Quests.ChainFromDB(q.id), nil
   for _, rows in pairs(site and type(site.quests) == "table" and site.quests or {}) do
     for _, d in ipairs(type(rows) == "table" and rows or {}) do
       if not chain and type(d[23]) == "table" and #d[23] > 1 then
+        if ns.Quests and ns.Quests.FixChainTitles then ns.Quests.FixChainTitles(d[23]) end
         for _, st in ipairs(d[23]) do if st[1] == q.id then chain = d[23]; if d[2] ~= st[2] then ends = d[2] end end end
       end
     end
   end
-  chain = chain or (ns.Quests and ns.Quests.ChainFromDB and ns.Quests.ChainFromDB(q.id))
   if type(chain) == "table" and #chain > 1 then
     local k, cur
     for i, st in ipairs(chain) do

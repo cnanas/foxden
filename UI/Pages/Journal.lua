@@ -5,7 +5,10 @@
 --           bosses folded away), abilities and the guild's tips.
 --   Quests: quest cards (level, faction, done or in your log); the picked one opens to show its
 --           quest chain. The detail side shows the objective, where it starts and ends (with map
---           pins), where you are in the chain, the guild's note, rewards and a link to read more online.
+--           pins), where you are in the chain, the guild's note, rewards (XP, money and reputation
+--           as chips) and a link to read more online.
+--   Map:    the dungeon's map with round boss portraits (size: Boss icons - / +) and marks for
+--           quests that start or end inside.
 
 local _, ns = ...
 local UI = ns.UI
@@ -172,7 +175,28 @@ local function visual(e, name)
     for _, k in ipairs(run.bosses or {}) do if k.name == name then look = look or k.look; npc = npc or k.npc end end
   end
   if not look and npc and ns.db and ns.db.npcLooks then look = ns.db.npcLooks[npc] end
+  -- never met by the guild: Foxden's own record (Data/BossData.lua)
+  if not look then
+    local b = ns.BossData_ and ns.BossData_(e.name, name)
+    if b then
+      npc = npc or b.npc
+      look = b.look or (npc and ns.db and ns.db.npcLooks and ns.db.npcLooks[npc]) or nil
+    end
+  end
   return look, npc
+end
+
+-- A boss's display ID by dungeon and boss name (the dungeon map on the world map draws portraits too).
+local lookEntry, lookSlug, lookAt
+function ns.BossLook(dungeonName, bossName)
+  local want = ns.Slug(dungeonName)
+  local now = GetTime and GetTime() or 0
+  if lookSlug ~= want or not lookAt or now - lookAt > 10 then
+    lookEntry, lookSlug, lookAt = nil, want, now
+    for _, x in ipairs(dungeonList()) do if ns.Slug(x.name) == want then lookEntry = x end end
+  end
+  if not lookEntry then return nil end
+  return (visual(lookEntry, bossName))
 end
 
 -- The flat boss portraits need a display ID; many bosses only have an NPC ID. A hidden model
@@ -279,6 +303,11 @@ local function lootOf(e, boss)
       names[it[1]] = it[2]
       if not count[it[1]] then order[#order + 1] = it[1]; count[it[1]] = 0 end
     end
+  end
+  -- Foxden's own record of what this boss drops (Data/BossData.lua); the guild's runs add to it
+  local known = ns.BossData_ and ns.BossData_(e.name, boss.name)
+  for _, it in ipairs(known and known.loot or {}) do
+    if not count[it[1]] then order[#order + 1] = it[1]; count[it[1]] = 0; names[it[1]] = it[2] end
   end
   for _, id in ipairs(order) do loot[#loot + 1] = { id = id, seen = count[id], name = names[id] } end
   local n = {}
@@ -465,7 +494,7 @@ local function chainLines(chain, k, cur)
   local ar, ag, ab = UI.Accent()
   local first, last = 1, #chain
   if #chain > 10 then first, last = math.max(1, k - 4), math.min(#chain, k + 4) end
-  local out = {}
+  local out, rows = {}, {}
   if first > 1 then out[#out + 1] = "|cff6b7280   ...|r" end
   for i = first, last do
     local step = chain[i]
@@ -477,9 +506,22 @@ local function chainLines(chain, k, cur)
     elseif st == "have" then line = "|cffe8c35a" .. line .. "  (in your log)|r"
     else line = "|cffc8ccd4" .. line .. "|r" .. here end
     out[#out + 1] = line
+    rows[#rows + 1] = { i = i, id = step[1], text = line }
   end
   if last < #chain then out[#out + 1] = "|cff6b7280   ... " .. #chain .. " steps|r" end
-  return table.concat(out, "\n")
+  return table.concat(out, "\n"), rows
+end
+-- A chain step that isn't one of the dungeon's own quests, as a quest row (QuestieDB fills it in).
+local stepRowCache = {}
+local function stepAsQuest(step)
+  local id = step[1]
+  if not stepRowCache[id] then
+    local q = { id, tostring(step[2] or ""), step[8] or "", step[9] or 0, step[7] or 0, step[3] or "", "", step[4] or 0, step[5] or 0, step[6] or 0,
+      "", "", "", 0, 0, "", {}, {}, "", 0, 0, 0 }
+    if ns.Quests then q = ns.Quests.Enrich(q) end
+    stepRowCache[id] = q
+  end
+  return stepRowCache[id]
 end
 local function questNote(q)
   local site = ns.Site()
@@ -607,7 +649,7 @@ function page:Build(f)
     UI.Fill(b, C.raised); UI.Border(b)
     b.bg = b:CreateTexture(nil, "ARTWORK"); b.bg:SetAllPoints(); UI.Accented(b.bg, 0.14); b.bg:Hide()
     b.under = b:CreateTexture(nil, "OVERLAY"); b.under:SetPoint("BOTTOMLEFT"); b.under:SetPoint("BOTTOMRIGHT"); b.under:SetHeight(2)
-    b.icon = b:CreateTexture(nil, "OVERLAY"); b.icon:SetSize(18, 18); b.icon:SetPoint("LEFT", 10, 0); v[3](b.icon)
+    b.icon = b:CreateTexture(nil, "OVERLAY"); b.icon:SetSize(20, 20); b.icon:SetPoint("LEFT", 9, 0); v[3](b.icon)
     b.text = UI.Text(b, 12, C.dim); b.text:SetPoint("LEFT", b.icon, "RIGHT", 7, 0)
     b.text:SetText(v[2])
     b:SetSize(104, 30)
@@ -703,6 +745,25 @@ function page:Build(f)
     ns.RefreshUI()
   end)
   self.mapNote = UI.Text(self.mapPanel, 11, C.faint); self.mapNote:SetWordWrap(true)
+  -- Boss icons: - 80% +   (the size of the boss portraits on the map)
+  local function stepPins(d)
+    local v = math.floor(((ns.settings.bossPinScale or 0.8) + d) * 10 + 0.5) / 10
+    ns.settings.bossPinScale = math.max(0.4, math.min(1.6, v))
+    ns.RefreshUI()
+  end
+  self.pinPlus = UI.Button(self.mapPanel, "+", 24, 24, function() stepPins(0.2) end)
+  self.pinPct = UI.Text(self.mapPanel, 12, C.text, "CENTER"); self.pinPct:SetWidth(44)
+  self.pinMinus = UI.Button(self.mapPanel, "-", 24, 24, function() stepPins(-0.2) end)
+  self.pinLabel = UI.Text(self.mapPanel, 12, C.dim, "RIGHT"); self.pinLabel:SetText("Boss icons")
+  self.pinPct:SetPoint("RIGHT", self.pinPlus, "LEFT", 0, 0)
+  self.pinMinus:SetPoint("RIGHT", self.pinPct, "LEFT", 0, 0)
+  self.pinLabel:SetPoint("RIGHT", self.pinMinus, "LEFT", -8, 0)
+  -- quest marks on the map: on unless hidden
+  self.questsBtn = UI.Button(self.mapPanel, "Hide quests", 100, 24, function()
+    ns.settings.hideMapQuests = not ns.settings.hideMapQuests
+    ns.RefreshUI()
+  end)
+  self.questsBtn:SetPoint("RIGHT", self.pinLabel, "LEFT", -14, 0)
 
   -- Quests: cards on the left (the picked one opens to show its chain), the picked quest on the right
   self.qPanel = panel(f)
@@ -763,7 +824,18 @@ function page:Build(f)
   qd.note = UI.Text(self.qbody, 12, C.text); qd.note:SetWordWrap(true); qd.note:SetJustifyV("TOP")
   qd.chooseHead = UI.Text(self.qbody, 13); UI.Accented(qd.chooseHead)
   qd.alsoHead = UI.Text(self.qbody, 13); UI.Accented(qd.alsoHead)
-  qd.money = UI.Text(self.qbody, 12, C.text); qd.money:SetWordWrap(true)
+  -- XP, money and reputation as chips (XP tinted with the accent)
+  local function chip(accent)
+    local c = CreateFrame("Frame", nil, self.qbody); c:SetHeight(24)
+    UI.Fill(c, C.raised); UI.Border(c)
+    if accent then local t = c:CreateTexture(nil, "ARTWORK"); t:SetAllPoints(); UI.Accented(t, 0.16) end
+    c.text = UI.Text(c, 12, C.text, "CENTER"); c.text:SetPoint("CENTER")
+    function c:Set(text) self.text:SetText(text); self:SetWidth(math.floor((self.text:GetStringWidth() or 30) + 22)) end
+    return c
+  end
+  qd.xp = chip(true)
+  qd.coin = chip()
+  qd.rep = chip()
   qd.rows = {}
   qd.story = UI.Text(self.qbody, 11, C.dim); qd.story:SetWordWrap(true); qd.story:SetJustifyV("TOP")
   self.qnote = UI.Text(self.qbody, 11, C.faint); self.qnote:SetWordWrap(true)
@@ -800,18 +872,38 @@ end
 function page:Layout(w, h)
   self.w, self.h = w, h
   local top = -(PICK_H + 10)
-  self.head:ClearAllPoints(); self.head:SetPoint("TOPLEFT", 0, top); self.head:SetPoint("TOPRIGHT", 0, top); self.head:SetHeight(HEAD_H)
-  local tx = -14
-  for i = #self.viewTabs, 1, -1 do
-    local b = self.viewTabs[i]
-    b:ClearAllPoints(); b:SetPoint("TOPRIGHT", tx, -12)
-    tx = tx - b:GetWidth() - 6
+  -- the picker row never runs past the window: the dropdown gives up width first
+  self.picker:SetWidth(math.max(140, math.min(300, w - 394)))
+  -- Header. Wide: the tabs sit beside the title. When they don't fit there (a narrow window, a
+  -- long name) they get their own row under the text, so nothing ever covers the title.
+  local tabsW = 14
+  for _, b in ipairs(self.viewTabs) do tabsW = tabsW + b:GetWidth() + 6 end
+  local actionsW = 14 + 150 + (self.filterOn and 118 or 0) + (self.entranceOn and 98 or 0)
+  local titleW = (self.title.GetUnboundedStringWidth and self.title:GetUnboundedStringWidth()) or self.title:GetStringWidth() or 200
+  local stacked = 16 + titleW + 24 + tabsW > w
+  local headH = stacked and 132 or HEAD_H
+  self.head:ClearAllPoints(); self.head:SetPoint("TOPLEFT", 0, top); self.head:SetPoint("TOPRIGHT", 0, top); self.head:SetHeight(headH)
+  if stacked then
+    local x = 14
+    for _, b in ipairs(self.viewTabs) do
+      b:ClearAllPoints(); b:SetPoint("BOTTOMLEFT", x, 12)
+      x = x + b:GetWidth() + 6
+    end
+  else
+    local tx = -14
+    for i = #self.viewTabs, 1, -1 do
+      local b = self.viewTabs[i]
+      b:ClearAllPoints(); b:SetPoint("TOPRIGHT", tx, -12)
+      tx = tx - b:GetWidth() - 6
+    end
   end
-  local tabsW = -tx
-  self.title:SetWidth(math.max(160, w - tabsW - 40))
-  self.sub:SetWidth(w - 200); self.lfgWho:SetWidth(w - 200)
+  self.lfg:ClearAllPoints()
+  if stacked then self.lfg:SetPoint("TOPRIGHT", -14, -56) else self.lfg:SetPoint("BOTTOMRIGHT", -14, 12) end
+  local beside = math.max(120, w - actionsW - 30) -- text that shares a row with the buttons
+  self.title:SetWidth(stacked and (w - 32) or math.max(160, w - tabsW - 40))
+  self.sub:SetWidth(stacked and (w - 32) or beside); self.lfgWho:SetWidth(beside)
 
-  local cy = top - HEAD_H - GAP
+  local cy = top - headH - GAP
   local ch = h + cy
   local leftW = math.max(250, math.min(340, math.floor(w * 0.38)))
   local rightW = w - leftW - GAP
@@ -1087,7 +1179,7 @@ function page:ShowQuest(q)
   -- the whole chain
   qd.chainBox:SetShown(chain ~= nil and showChain)
   if chain and showChain then
-    qd.chainText:SetWidth(w - 24); qd.chainText:SetText(chainLines(chain, k, cur))
+    qd.chainText:SetWidth(w - 24); qd.chainText:SetText((chainLines(chain, k, cur)))
     local hh = (qd.chainText:GetStringHeight() or 0) + 20
     qd.chainBox:ClearAllPoints(); qd.chainBox:SetPoint("TOPLEFT", 0, -y); qd.chainBox:SetSize(w, hh)
     y = y + hh + 10
@@ -1136,11 +1228,12 @@ function page:ShowQuest(q)
     y = y + 6
   end
   local items = q[17] or {}
-  local extra = {}
-  if (q[14] or 0) > 0 then extra[#extra + 1] = UI.Num(q[14]) .. " XP" end
-  if (q[15] or 0) > 0 then extra[#extra + 1] = ns.Money(q[15]) end
-  if q[16] ~= "" then extra[#extra + 1] = q[16] .. " reputation" end
-  local hasAlso = #items > 0 or #extra > 0
+  local chips = {}
+  qd.xp:Hide(); qd.coin:Hide(); qd.rep:Hide()
+  if (q[14] or 0) > 0 then qd.xp:Set(UI.Num(q[14]) .. " XP"); chips[#chips + 1] = qd.xp end
+  if (q[15] or 0) > 0 then qd.coin:Set(ns.Money(q[15])); chips[#chips + 1] = qd.coin end
+  if q[16] ~= "" then qd.rep:Set(q[16] .. " reputation"); chips[#chips + 1] = qd.rep end
+  local hasAlso = #items > 0 or #chips > 0
   qd.alsoHead:SetShown(hasAlso)
   if hasAlso then
     qd.alsoHead:SetText(#choice > 0 and "You will also receive" or "Rewards")
@@ -1148,10 +1241,17 @@ function page:ShowQuest(q)
     cards(items, 0, colW, cols)
   end
   for k = n + 1, #qd.rows do qd.rows[k]:Hide() end
-  qd.money:SetShown(#extra > 0)
-  if #extra > 0 then
-    qd.money:SetWidth(w); qd.money:SetText(table.concat(extra, "   ·   "))
-    qd.money:ClearAllPoints(); qd.money:SetPoint("TOPLEFT", 0, -(y + 2)); y = y + 24
+  if #chips > 0 then
+    -- in a row, wrapping when the page is narrow
+    local cx = 0
+    y = y + 4
+    for _, c in ipairs(chips) do
+      local cwid = c:GetWidth() or 60
+      if cx > 0 and cx + cwid > w then cx = 0; y = y + 30 end
+      c:ClearAllPoints(); c:SetPoint("TOPLEFT", cx, -y); c:Show()
+      cx = cx + cwid + 8
+    end
+    y = y + 30
   end
   qd.story:SetWidth(w); qd.story:SetText(q[19] or "")
   qd.story:SetShown((q[19] or "") ~= "")
@@ -1171,28 +1271,68 @@ function page:ShowQuest(q)
   end
 end
 
--- One quest card: icon, title, level and status, faction crests, and the quest's chain with
--- your progress (every card, so you can see where you are in each chain at a glance).
+-- One quest card: a big quest mark, title, the level it opens at, "YOU HAVE IT" or "DONE", and
+-- faction crests. The picked card opens to show the quest's chain with your progress; the others
+-- say which step they are.
 local function questCard(parent)
   local c = CreateFrame("Button", nil, parent)
   UI.Fill(c, C.raised); UI.Border(c)
   c.tint = c:CreateTexture(nil, "BACKGROUND", nil, 1); c.tint:SetAllPoints(); UI.Accented(c.tint, 0.12); c.tint:Hide()
   c.bar = c:CreateTexture(nil, "ARTWORK"); c.bar:SetPoint("TOPLEFT"); c.bar:SetPoint("BOTTOMLEFT"); c.bar:SetWidth(2); UI.Accented(c.bar); c.bar:Hide()
   UI.Fill(c, C.hover, "HIGHLIGHT")
-  c.qicon = c:CreateTexture(nil, "ARTWORK"); c.qicon:SetSize(20, 20); c.qicon:SetPoint("TOPLEFT", 12, -12)
-  c.c2 = c:CreateTexture(nil, "ARTWORK"); c.c2:SetSize(20, 20); c.c2:SetPoint("TOPRIGHT", -10, -10)
-  c.c1 = c:CreateTexture(nil, "ARTWORK"); c.c1:SetSize(20, 20); c.c1:SetPoint("RIGHT", c.c2, "LEFT", -4, 0)
-  c.title = UI.Text(c, 13); c.title:SetWordWrap(true); c.title:SetJustifyV("TOP"); c.title:SetPoint("TOPLEFT", 42, -12)
+  c.qicon = c:CreateTexture(nil, "ARTWORK"); c.qicon:SetSize(28, 28); c.qicon:SetPoint("TOPLEFT", 9, -12)
+  -- top right: "YOU HAVE IT" / "DONE"; under it, the faction crests
+  c.tag = UI.Text(c, 10, C.dim, "RIGHT"); c.tag:SetPoint("TOPRIGHT", -10, -11)
+  c.c2 = c:CreateTexture(nil, "ARTWORK"); c.c2:SetSize(18, 18); c.c2:SetPoint("TOPRIGHT", -10, -30)
+  c.c1 = c:CreateTexture(nil, "ARTWORK"); c.c1:SetSize(18, 18); c.c1:SetPoint("RIGHT", c.c2, "LEFT", -4, 0)
+  c.title = UI.Text(c, 14); c.title:SetWordWrap(true); c.title:SetJustifyV("TOP"); c.title:SetPoint("TOPLEFT", 46, -11)
   c.sub = UI.Text(c, 11, C.dim); c.sub:SetPoint("TOPLEFT", c.title, "BOTTOMLEFT", 0, -5)
   c.inset = CreateFrame("Frame", nil, c); UI.Fill(c.inset, C.bg); UI.Border(c.inset)
-  c.steps = UI.Text(c.inset, 12); c.steps:SetWordWrap(true); c.steps:SetJustifyV("TOP"); c.steps:SetSpacing(4)
-  c.steps:SetPoint("TOPLEFT", 10, -8)
+  c.stepRows = {} -- one clickable line per chain step
   c:SetScript("OnClick", function(self) selQuest = self.qid; showLink = false; ns.RefreshUI() end)
   return c
 end
 
 function page:LayoutQuests(e)
   local quests, totalQuests = questsOf(e)
+  local state = function(x) return ns.QuestState and ns.QuestState(x[1]) end
+  -- a quest that only leads up to another quest listed here lives inside that quest's card (its
+  -- chain), not on a card of its own
+  local leadsTo = {}
+  for _, x in ipairs(quests) do
+    local chain, k = chainOf(x)
+    for j = 1, (chain and k or 1) - 1 do leadsTo[chain[j][1]] = leadsTo[chain[j][1]] or x[1] end
+  end
+  local own = {}
+  for i, x in ipairs(quests) do
+    x._i = i
+    if not leadsTo[x[1]] then own[#own + 1] = x end
+  end
+  -- the card that is open: the picked quest's own, or the one whose chain the picked step is in
+  local onCard
+  for _, x in ipairs(own) do if x[1] == selQuest then onCard = x[1] end end
+  if not onCard and selQuest then
+    for _, x in ipairs(own) do
+      local chain = chainOf(x)
+      for _, step in ipairs(chain or {}) do if not onCard and step[1] == selQuest then onCard = x[1] end end
+    end
+  end
+  -- what you can still do comes first: in your log, then open, then done (which can be put away
+  -- with the button under the list)
+  local rank = function(x) local st = state(x); return st == "have" and 1 or st == "done" and 3 or 2 end
+  local hideDone, doneCount, kept = ns.settings.hideDoneQuests == true, 0, {}
+  for _, x in ipairs(own) do
+    local done = state(x) == "done"
+    if done then doneCount = doneCount + 1 end
+    if not (done and hideDone) or x[1] == onCard then kept[#kept + 1] = x end
+  end
+  local listed = quests
+  quests = kept
+  table.sort(quests, function(a, b)
+    local ra, rb = rank(a), rank(b)
+    if ra ~= rb then return ra < rb end
+    return a._i < b._i
+  end)
   local sf = factionShown()
   self.qHead:SetText("Quests  |cff99a1b0" .. #quests .. "|r")
   for fac, b in pairs(self.fbtn) do
@@ -1204,11 +1344,21 @@ function page:LayoutQuests(e)
     .. (hiddenProf > 0 and string.format("  ·  %d profession %s hidden", hiddenProf, hiddenProf == 1 and "quest" or "quests") or "")))
   -- keep the picked quest; else the first one you haven't done
   local q
-  for _, x in ipairs(quests) do if x[1] == selQuest then q = x end end
+  if onCard then
+    for _, x in ipairs(listed) do if x[1] == selQuest then q = x end end
+    if not q then -- a step of the open card's chain that isn't a dungeon quest itself
+      for _, x in ipairs(own) do
+        if x[1] == onCard then
+          for _, step in ipairs(chainOf(x) or {}) do if step[1] == selQuest then q = stepAsQuest(step) end end
+        end
+      end
+    end
+  end
   if not q then
     for _, x in ipairs(quests) do if not q and not (ns.QuestState and ns.QuestState(x[1]) == "done") then q = x end end
     q = q or quests[1]
     selQuest = q and q[1]
+    onCard = selQuest
   end
 
   local cw = self.qcards:GetWidth() or 300
@@ -1221,36 +1371,73 @@ function page:LayoutQuests(e)
     if x[3] == "B" then crest(c.c1, "A"); crest(c.c2, "H"); c.c1:Show(); c.c2:Show()
     elseif x[3] == "A" or x[3] == "H" then crest(c.c2, x[3]); c.c1:Hide(); c.c2:Show()
     else c.c1:Hide(); c.c2:Hide() end
-    local on = x[1] == selQuest
+    local on = x[1] == onCard
     c.tint:SetShown(on); c.bar:SetShown(on)
-    c.title:SetWidth(cw - 42 - 58); c.title:SetText(x[2])
+    c.tag:SetText(st == "done" and "|cff6fd39aDONE|r" or st == "have" and "|cffe8c35aYOU HAVE IT|r" or "")
+    local tagW = c.tag:GetText() ~= "" and (c.tag:GetStringWidth() or 0) or 0
+    local crestW = x[3] == "B" and 40 or (x[3] == "A" or x[3] == "H") and 18 or 0
+    c.title:SetWidth(cw - 46 - math.max(tagW, crestW) - 20); c.title:SetText(x[2])
+    c.sub:SetWidth(cw - 46 - crestW - 20)
     if on then c.title:SetTextColor(UI.Accent()) else c.title:SetTextColor(unpack((st == "done" or x.locked) and C.dim or C.text)) end
     local chain, k, cur = chainOf(x)
     local bits = {}
     local lvl = (x[5] or 0) > 0 and x[5] or x[4]
-    if (lvl or 0) > 0 then bits[#bits + 1] = "From level " .. lvl end
+    if (lvl or 0) > 0 then bits[#bits + 1] = "Available from Level " .. lvl end
     if x.locked then bits[#bits + 1] = "|cffef6b6b" .. x.locked .. "|r" end
     if chain then bits[#bits + 1] = "step " .. k .. " of " .. #chain end
-    if st == "done" then bits[#bits + 1] = "|cff6fd39aDone|r" elseif st == "have" then bits[#bits + 1] = "|cffe8c35aIn your log|r" end
     c.sub:SetText(table.concat(bits, "  ·  "))
-    local h = 12 + math.max(16, c.title:GetStringHeight() or 16) + 5 + 12 + 12
-    c.inset:SetShown(chain ~= nil)
-    if chain then
-      c.steps:SetWidth(cw - 24 - 20); c.steps:SetText(chainLines(chain, k, cur))
-      local ih = (c.steps:GetStringHeight() or 0) + 16
+    local h = 11 + math.max(17, c.title:GetStringHeight() or 17) + 5 + 12 + 13
+    -- the chain opens on the picked card only, so the list stays even
+    c.inset:SetShown(chain ~= nil and on)
+    local nrows = 0
+    if chain and on then
+      -- each step is a line you can click to read that quest; the one being read is lit
+      local at = k
+      for j, step in ipairs(chain) do if step[1] == selQuest then at = j end end
+      local _, rows = chainLines(chain, at, cur)
+      nrows = #rows
+      for j, row in ipairs(rows) do
+        local sr = c.stepRows[j]
+        if not sr then
+          sr = CreateFrame("Button", nil, c.inset); sr:SetHeight(20)
+          sr.sel = sr:CreateTexture(nil, "BACKGROUND"); sr.sel:SetAllPoints(); UI.Accented(sr.sel, 0.18)
+          UI.Fill(sr, C.hover, "HIGHLIGHT")
+          sr.text = UI.Text(sr, 12); sr.text:SetPoint("LEFT", 8, 0); sr.text:SetPoint("RIGHT", -6, 0); sr.text:SetWordWrap(false)
+          sr:SetScript("OnClick", function(self) selQuest = self.qid; showLink = false; ns.RefreshUI() end)
+          c.stepRows[j] = sr
+        end
+        sr.qid = row.id
+        sr.text:SetText(row.text); sr.sel:SetShown(row.id == selQuest)
+        sr:ClearAllPoints(); sr:SetPoint("TOPLEFT", 3, -4 - (j - 1) * 20); sr:SetPoint("RIGHT", c.inset, "RIGHT", -3, 0)
+        sr:Show()
+      end
+      local ih = #rows * 20 + 8
       c.inset:ClearAllPoints(); c.inset:SetPoint("TOPLEFT", 12, -h); c.inset:SetPoint("RIGHT", c, "RIGHT", -12, 0); c.inset:SetHeight(ih)
       h = h + ih + 12
     end
+    for j = nrows + 1, #c.stepRows do c.stepRows[j]:Hide() end
     c:ClearAllPoints(); c:SetPoint("TOPLEFT", 0, -y); c:SetSize(cw, h); c:Show()
     y = y + h + 6
   end
   for i = #quests + 1, #self.cards do self.cards[i]:Hide() end
+  if not self.doneBtn then
+    self.doneBtn = UI.Button(self.qcards, "", 120, 24, function()
+      ns.settings.hideDoneQuests = not (ns.settings.hideDoneQuests ~= false)
+      ns.RefreshUI()
+    end)
+  end
+  self.doneBtn:SetShown(doneCount > 0)
+  if doneCount > 0 then
+    self.doneBtn.label:SetText(hideDone and string.format("Show %d done", doneCount) or "Hide done")
+    self.doneBtn:ClearAllPoints(); self.doneBtn:SetPoint("TOPLEFT", 0, -y); self.doneBtn:SetWidth(cw)
+    y = y + 24 + 6
+  end
   self.qcards:SetHeight(math.max(1, y))
   local max = math.max(0, y - (self.qlistScroll:GetHeight() or 0))
   if (self.qlistScroll:GetVerticalScroll() or 0) > max then self.qlistScroll:SetVerticalScroll(max) end
 
-  self.qlistScroll:SetShown(#quests > 0)
-  self.qempty:SetShown(#quests == 0)
+  self.qlistScroll:SetShown(#quests > 0 or doneCount > 0)
+  self.qempty:SetShown(#quests == 0 and doneCount == 0)
   self.qempty:SetText(ns.Site() and ns.Site().quests and "No quests listed for this dungeon." or "Quests come from your guild's website and load when you log in with the companion app running.")
   self.qdPanel:SetShown(q ~= nil)
   if q then self:ShowQuest(q) end
@@ -1477,16 +1664,18 @@ function page:Refresh(arg)
       local nr = s and #s.runs or 0
       t.text:SetText(nr > 0 and ("Runs " .. nr) or "Runs")
     end
-    t:SetWidth(math.max(92, (t.text:GetStringWidth() or 40) + 46))
+    t:SetWidth(math.max(92, math.floor((t.text:GetStringWidth() or 40) + 48)))
     t:Show()
   end
-  self:Layout(self.w or 800, self.h or 500)
-
   self.filterBtn.label:SetText(ns.LootFilter and ns.LootFilter.Active() and "Loot filter: on" or "Loot filter")
-  self.filterBtn:SetShown(jview == "bosses" or jview == "trash")
+  self.filterOn = jview == "bosses" or jview == "trash"
+  self.entranceOn = (ns.DungeonEntrance and ns.DungeonEntrance(e.name) ~= nil) and true or false
+  self.filterBtn:SetShown(self.filterOn)
   self.entranceBtn:ClearAllPoints()
-  if self.filterBtn:IsShown() then self.entranceBtn:SetPoint("RIGHT", self.filterBtn, "LEFT", -8, 0) else self.entranceBtn:SetPoint("RIGHT", self.lfg, "LEFT", -8, 0) end
-  self.entranceBtn:SetShown(ns.DungeonEntrance and ns.DungeonEntrance(e.name) ~= nil)
+  if self.filterOn then self.entranceBtn:SetPoint("RIGHT", self.filterBtn, "LEFT", -8, 0) else self.entranceBtn:SetPoint("RIGHT", self.lfg, "LEFT", -8, 0) end
+  self.entranceBtn:SetShown(self.entranceOn)
+  -- after the title, tabs and buttons are set: the header's layout depends on their widths
+  self:Layout(self.w or 800, self.h or 500)
   if jview == "trash" then self:ShowTrash(e); return end
   if jview == "runs" then
     local runs = {}
@@ -1531,8 +1720,12 @@ function page:Refresh(arg)
     local ids = {}
     for _, sb in ipairs(e.static and e.static.bosses or {}) do ids[sb.name] = sb.ids end
     local pins, unplaced = {}, {}
+    local scale = ns.settings.bossPinScale or 0.8
+    local pinPx = math.floor(40 * scale + 0.5)
+    local needLook = {}
     for _, b in ipairs(bosses) do
-      local f, x, y = ns.BossPin and ns.BossPin(e.name, b.name)
+      local f, x, y -- (`a and f()` keeps only f's first result)
+      if ns.BossPin then f, x, y = ns.BossPin(e.name, b.name) end
       local p
       if f then
         if ns.PinOnFloor(f, cur, curN) then p = { x = x, y = y } end
@@ -1545,11 +1738,36 @@ function page:Refresh(arg)
           end
         end
       end
-      if p then pins[#pins + 1] = { x = p.x, y = p.y, n = b.n, key = b.name, label = b.name, on = b.name == selBoss }
+      if p then
+        local look, npc = visual(e, b.name)
+        if not look and npc then needLook[#needLook + 1] = npc end
+        pins[#pins + 1] = { x = p.x, y = p.y, n = b.n, key = b.name, label = b.name, on = b.name == selBoss, boss = true, look = look, size = pinPx }
       elseif not f then unplaced[#unplaced + 1] = b.name end
     end
+    resolveLooks(needLook) -- portraits for bosses known only by NPC ID; redraws when they arrive
+    -- quests that start on this floor (or, once you have them, are handed in on it)
+    local questMarks = {}
+    if cur and cur.map then
+      for _, q in ipairs((questsOf(e))) do
+        local st = ns.QuestState and ns.QuestState(q[1])
+        local m, qx, qy, who = q[8], q[9], q[10], q[6]
+        if st == "have" and (q[20] or 0) > 0 then m, qx, qy, who = q[20], q[21], q[22], (q[11] ~= "" and q[11] or q[6]) end
+        if st ~= "done" and m == cur.map and (qx or 0) > 0 and (qy or 0) > 0 then
+          questMarks[#questMarks + 1] = { x = qx * 10, y = qy * 10, quest = st == "have" and "have" or "new", key = "quest:" .. q[1],
+            qid = q[1], label = q[2], sub = who ~= "" and who or nil }
+        end
+      end
+    end
+    local hideQuests = ns.settings.hideMapQuests == true
+    if not hideQuests then for _, m in ipairs(questMarks) do pins[#pins + 1] = m end end
+    self.questsBtn:SetShown(#questMarks > 0)
+    self.questsBtn.label:SetText(hideQuests and "Show quests" or "Hide quests")
+    for _, el in ipairs({ self.pinPlus, self.pinPct, self.pinMinus, self.pinLabel }) do el:SetShown(cur ~= nil and #bosses > 0) end
+    self.pinPct:SetText(string.format("%d%%", math.floor(scale * 100 + 0.5)))
+    self.pinMinus:SetAlpha(scale <= 0.4 and 0.4 or 1); self.pinPlus:SetAlpha(scale >= 1.6 and 0.4 or 1)
+    self.pinPlus:ClearAllPoints(); self.pinPlus:SetPoint("RIGHT", placing and self.skipBtn or self.placeBtn, "LEFT", -12, 0)
     self.map:SetShown(#floors > 0)
-    if cur then self.map:Draw(cur.map, self.mapW or 400, self.mapH or 267, pins, cur.tiles) end
+    if cur then self.map:Draw(cur.map, self.mapW or 400, self.mapH or 267, pins, cur.tiles, cur) end
 
     -- placing pins: click the map where each boss stands, one after another
     local dungeon = e.name
@@ -1572,10 +1790,16 @@ function page:Refresh(arg)
       self.map.onClick = nil
       self.mapNote:SetText(#floors == 0 and "The game has no map picture for this dungeon."
         or (#pins == 0 and "No boss locations on this floor yet. Press Place bosses and click where each one stands (the skulls on the map)."
-        or ("Hover a boss for its loot, click it for the loot list. Numbers are the boss order."
-          .. (#unplaced > 0 and ("  Not placed yet: " .. table.concat(unplaced, ", ") .. ".") or ""))))
+        or ("Hover a boss for its loot, click it for the loot list; right-click opens its page."
+          .. (#unplaced > 0 and ("  Not placed yet: " .. table.concat(unplaced, ", ") .. ".") or "")))
+        .. (cur and cur.credit and ("  |cff99a1b0" .. cur.credit .. "|r") or ""))
     end
     self.map.onPin = function(name, button, pinFrame)
+      local data = pinFrame.data
+      if data and data.quest then
+        if not placing then selQuest = data.qid; showLink = false; jview = "quests"; ns.RefreshUI() end
+        return
+      end
       if button == "RightButton" then
         if placing then ns.SetBossPin(dungeon, name, nil, nil, nil); ns.RefreshUI()
         else selBoss = name; jview = "bosses"; ns.RefreshUI() end
@@ -1584,6 +1808,13 @@ function page:Refresh(arg)
       ns.ShowBossLootPopup(pinFrame, dungeon, name)
     end
     self.map.onPinEnter = function(pinFrame, tip)
+      local data = pinFrame.data
+      if data and data.quest then
+        tip:SetText(data.label or "Quest")
+        if data.sub then tip:AddLine((data.quest == "have" and "Hand in to " or "From ") .. data.sub, 0.7, 0.72, 0.78) end
+        tip:AddLine("Click: open the quest", 0.55, 0.85, 0.55)
+        return
+      end
       local name = pinFrame.key
       local boss
       for _, b in ipairs(bosses) do if b.name == name then boss = b end end

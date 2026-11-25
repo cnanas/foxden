@@ -167,6 +167,7 @@ function ns.BossPin(dungeon, boss)
   end
   local s = seeds()[slug] and seeds()[slug][boss]
   if s then return "#" .. s[1], s[2], s[3] end
+  if ns.SeedBossPin then return ns.SeedBossPin(dungeon, boss) end
 end
 
 local function save(slug, boss, f, x, y, by)

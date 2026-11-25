@@ -182,23 +182,32 @@ function UI.Round(owner, tex)
   end
 end
 
+-- fs._fixed: never adjusted (text on a surface whose color doesn't change with the theme).
 local function readableFontString(fs)
   local setColor, setText = fs.SetTextColor, fs.SetText
   fs.SetTextColor = function(self, r, g, b, a)
     self._rgb = { r, g, b, a } -- as asked, so a theme switch can redo it
+    if self._fixed then return setColor(self, r, g, b, a) end
     local rr, gg, bb = UI.Readable(r, g, b)
     return setColor(self, rr, gg, bb, a)
   end
   fs.SetText = function(self, text)
     self._raw = text
-    return setText(self, UI.ReadableText(text))
+    return setText(self, self._fixed and text or UI.ReadableText(text))
   end
   fs.RefreshReadable = function(self)
-    if self._rgb then local c = self._rgb; local rr, gg, bb = UI.Readable(c[1], c[2], c[3]); setColor(self, rr, gg, bb, c[4]) end
-    if self._raw ~= nil then setText(self, UI.ReadableText(self._raw)) end
+    if self._rgb then
+      local c = self._rgb
+      local rr, gg, bb = c[1], c[2], c[3]
+      if not self._fixed then rr, gg, bb = UI.Readable(rr, gg, bb) end
+      setColor(self, rr, gg, bb, c[4])
+    end
+    if self._raw ~= nil then setText(self, self._fixed and self._raw or UI.ReadableText(self._raw)) end
   end
 end
 local readables = setmetatable({}, { __mode = "k" })
+-- Text whose color is never adjusted (e.g. the number on a map pin's own dark disc).
+function UI.Fixed(fs) fs._fixed = true; fs:RefreshReadable(); return fs end
 
 function UI.Text(parent, size, color, justify)
   local fs = parent:CreateFontString(nil, "OVERLAY")

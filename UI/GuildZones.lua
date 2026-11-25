@@ -87,7 +87,8 @@ function ns.DrawGuildZones(child, shown)
     for zone, members in pairs(byZone) do
       local x, y, dungeon
       local map = zoneMap(zone)
-      local em, ex, ey = ns.DungeonEntrance and ns.DungeonEntrance(zone)
+      local em, ex, ey -- (`a and f()` keeps only f's first result)
+      if ns.DungeonEntrance then em, ex, ey = ns.DungeonEntrance(zone) end
       if em then x, y = onShown(em, ex / 100, ey / 100, shown); dungeon = true
       elseif map then
         -- on the zone's own map: top middle, out of the way; zoomed out: the zone's middle

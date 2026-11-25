@@ -244,11 +244,11 @@ async function uploadRoster(roster, locations, atlas) {
   }
 }
 
-// Level-ups, guild dings and trainer lists -> website. Only when something changed.
-async function uploadLeveling(levels, dings, trainers) {
+// Level-ups, guild dings, trainer lists and where recipes were learned -> website. Only when something changed.
+async function uploadLeveling(levels, dings, trainers, recipeSources) {
   if (!config.siteUrl || !config.siteKey || DRY) return;
-  if (!levels && !dings && !trainers) return;
-  const body = { levels: levels || {}, dings: dings || [], trainers: trainers ? { class: trainers.class || {}, prof: trainers.prof || {} } : {} };
+  if (!levels && !dings && !trainers && !recipeSources) return;
+  const body = { levels: levels || {}, dings: dings || [], trainers: trainers ? { class: trainers.class || {}, prof: trainers.prof || {} } : {}, recipeSources: recipeSources || {} };
   const hash = createHash('sha256').update(JSON.stringify(body)).digest('hex');
   if (hash === craftState.levelingHash) return;
   try {
@@ -258,7 +258,7 @@ async function uploadLeveling(levels, dings, trainers) {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) { console.error(`Leveling upload failed (${res.status}): ${data.error || 'no details'}`); return; }
     craftState.levelingHash = hash; saveCraftState();
-    console.log(`Uploaded leveling: ${data.levels} level-ups, ${data.dings} guild dings, ${data.spells} trainer entries.`);
+    console.log(`Uploaded leveling: ${data.levels} level-ups, ${data.dings} guild dings, ${data.spells} trainer entries${data.recipes ? `, ${data.recipes} recipe sources` : ""}.`);
   } catch (err) {
     console.error(`Website unreachable for the leveling upload (${err.message}).`);
   }
@@ -279,6 +279,25 @@ async function uploadQuestSpots(spots) {
     console.log(`Uploaded quest locations: ${data.saved} quest starts and turn-ins.`);
   } catch (err) {
     console.error(`Website unreachable for the quest locations upload (${err.message}).`);
+  }
+}
+
+// How quests chain together, from the QuestieDB addon in game (Foxden writes it at logout when
+// QuestieDB's version changes) -> website, so its journal chains match the game's. Once per version.
+async function uploadQuestLinks(q) {
+  if (!config.siteUrl || !config.siteKey || DRY || !q || !q.ver || !q.links) return;
+  if (q.ver === craftState.questLinksVer) return;
+  try {
+    const res = await fetch(`${config.siteUrl.replace(/\/$/, '')}/api/quests`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.siteKey}` },
+      body: JSON.stringify({ links: q.links, linksVer: q.ver }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { console.error(`Quest chain upload failed (${res.status}): ${data.error || 'no details'}`); return; }
+    craftState.questLinksVer = q.ver; saveCraftState();
+    console.log(`Uploaded quest chains from ${q.ver}: ${data.links} quests.`);
+  } catch (err) {
+    console.error(`Website unreachable for the quest chain upload (${err.message}).`);
   }
 }
 
@@ -587,8 +606,9 @@ async function check() {
     await uploadCrafting(db && db.crafting);
     await uploadJournal(db && db.journal);
     await uploadRoster(db && db.roster, db && db.locations, db && db.atlas);
-    await uploadLeveling(db && db.levels, db && db.dings, db && db.trainers);
+    await uploadLeveling(db && db.levels, db && db.dings, db && db.trainers, db && db.recipeSources);
     await uploadQuestSpots(db && db.questSpots);
+    await uploadQuestLinks(db && db.questLinks);
     await sendCraftRequests(db && db.craftRequests);
     await uploadMembers(db && db.member);
     await uploadItemTips(db && db.itemTips);

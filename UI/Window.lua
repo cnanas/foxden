@@ -505,7 +505,9 @@ local function build()
 
   -- resize grip
   local grip = CreateFrame("Button", nil, W)
-  grip:SetSize(16, 16); grip:SetPoint("BOTTOMRIGHT", -2, 2)
+  grip:SetSize(18, 18); grip:SetPoint("BOTTOMRIGHT", -1, 1)
+  -- above every page: a page's panels and buttons reach into this corner and would cover it
+  grip:SetFrameLevel(W:GetFrameLevel() + 500)
   grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
   grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
   grip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
